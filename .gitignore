@@ -1,0 +1,32 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary and coverage
+*.test
+*.out
+coverage.html
+
+# Go build cache (local)
+/dist/
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
+# Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# SQLite databases (local dev data)
+*.db
+*.sqlite
+*.sqlite3
