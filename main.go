@@ -13,7 +13,7 @@ import (
 func main() {
 	_ = godotenv.Load()
 
-	database, err := db.Open("anki.db")
+	database, err := db.Open("lazyrecall.db")
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
