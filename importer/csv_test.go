@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ippei/poc-anki-claude/db"
+	"github.com/ippei/lazyrecall/db"
 )
 
 func openTestDB(t *testing.T) *sql.DB {

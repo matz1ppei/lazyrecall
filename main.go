@@ -4,12 +4,15 @@ import (
 	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ippei/poc-anki-claude/ai"
-	"github.com/ippei/poc-anki-claude/db"
-	"github.com/ippei/poc-anki-claude/tui"
+	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/db"
+	"github.com/ippei/lazyrecall/tui"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load()
+
 	database, err := db.Open("anki.db")
 	if err != nil {
 		log.Fatalf("open db: %v", err)

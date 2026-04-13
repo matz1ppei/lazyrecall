@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ippei/poc-anki-claude/db"
+	"github.com/ippei/lazyrecall/db"
 )
 
 // ImportCSV reads a CSV file with header row (front,back,hint) and inserts each
@@ -48,7 +48,7 @@ func ImportCSV(database *sql.DB, path string) (imported int, err error) {
 			errs = append(errs, fmt.Errorf("row %d: front and back must not be empty", i+2))
 			continue
 		}
-		id, insertErr := db.CreateCard(database, front, back, hint)
+		id, insertErr := db.CreateCard(database, front, back, hint, "", "")
 		if insertErr != nil {
 			errs = append(errs, fmt.Errorf("row %d: %w", i+2, insertErr))
 			continue

@@ -30,3 +30,9 @@ coverage.html
 *.db
 *.sqlite
 *.sqlite3
+
+# Claude Code internal files
+.claude/
+
+# Local assets
+*.png

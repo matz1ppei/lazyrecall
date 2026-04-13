@@ -9,7 +9,7 @@ var (
 			MarginBottom(1)
 
 	subtitleStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(lipgloss.Color("250"))
 
 	menuItemStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("252"))
@@ -19,7 +19,7 @@ var (
 			Foreground(lipgloss.Color("86"))
 
 	labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+			Foreground(lipgloss.Color("250"))
 
 	inputLabelStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -45,12 +45,28 @@ var (
 			MarginBottom(1)
 
 	hintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
+			Foreground(lipgloss.Color("250")).
 			Italic(true)
 
 	ratingStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("86"))
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("238"))
+			Foreground(lipgloss.Color("247"))
+
+	matchCursorStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("86"))
+
+	matchSelectedStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("214"))
+
+	matchMatchedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("242")).
+				Strikethrough(true)
+
+	matchWrongStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("196"))
 )
