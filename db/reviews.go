@@ -57,7 +57,7 @@ func GetOrCreateReview(db *sql.DB, cardID int64) (Review, error) {
 		return Review{
 			ID:         id,
 			CardID:     cardID,
-			DueDate:    time.Now().Format("2006-01-02"),
+			DueDate:    time.Now().UTC().Format("2006-01-02"),
 			Interval:   1,
 			EaseFactor: 2.5,
 		}, nil
@@ -177,7 +177,7 @@ func CountDueCards(db *sql.DB) (int, error) {
 }
 
 func SetDueToday(db *sql.DB, cardIDs []int64) error {
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
 	for _, id := range cardIDs {
 		if _, err := db.Exec(`UPDATE reviews SET due_date = ? WHERE card_id = ?`, today, id); err != nil {
 			return err
@@ -260,8 +260,8 @@ func calcStreak(dates []string) int {
 	if len(dates) == 0 {
 		return 0
 	}
-	today := time.Now().Format("2006-01-02")
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 
 	// streak must include today or yesterday to be active
 	if dates[0] != today && dates[0] != yesterday {

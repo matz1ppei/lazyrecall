@@ -16,10 +16,13 @@ type sessionPhase int
 
 const (
 	sessionPhaseLoading       sessionPhase = iota
+	sessionPhasePreview       // card survey before session begins
 	sessionPhaseReview
+	sessionPhaseBrainDump1    // free-recall after Review, before Match
 	sessionPhaseMatch
 	sessionPhaseReverseReview
 	sessionPhaseBlank
+	sessionPhaseBrainDump2    // free-recall after Blank, before Done
 	sessionPhaseDone
 )
 
@@ -31,16 +34,19 @@ type msgSessionReady struct {
 
 type msgSessionPhaseComplete struct{}
 
-// SessionModel orchestrates Review → Match → Reverse Review → Blank as a daily session.
+// SessionModel orchestrates Preview → Review → BrainDump1 → Match → ReverseReview → Blank → BrainDump2 as a daily session.
 type SessionModel struct {
 	db               *sql.DB
 	ai               ai.Client
 	phase            sessionPhase
 	cards            []db.CardWithReview
+	preview          PreviewModel
 	review           ReviewModel
+	brainDump1       BrainDumpModel
 	match            MatchModel
 	reverseReview    ReviewModel
 	blank            BlankModel
+	brainDump2       BrainDumpModel
 	reviewDone       bool
 	matchDone        bool
 	reverseReviewDone bool
@@ -79,7 +85,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cards = msg.cards
-		return m.startPhase(sessionPhaseReview)
+		return m.startPhase(sessionPhasePreview)
 
 	case msgSessionPhaseComplete:
 		return m.advancePhase()
@@ -87,9 +93,19 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Forward to active sub-model
 	switch m.phase {
+	case sessionPhasePreview:
+		updated, cmd := m.preview.Update(msg)
+		m.preview = updated.(PreviewModel)
+		return m, cmd
+
 	case sessionPhaseReview:
 		updated, cmd := m.review.Update(msg)
 		m.review = updated.(ReviewModel)
+		return m, cmd
+
+	case sessionPhaseBrainDump1:
+		updated, cmd := m.brainDump1.Update(msg)
+		m.brainDump1 = updated.(BrainDumpModel)
 		return m, cmd
 
 	case sessionPhaseMatch:
@@ -107,6 +123,11 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.blank = updated.(BlankModel)
 		return m, cmd
 
+	case sessionPhaseBrainDump2:
+		updated, cmd := m.brainDump2.Update(msg)
+		m.brainDump2 = updated.(BrainDumpModel)
+		return m, cmd
+
 	case sessionPhaseDone:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			if key.String() == "enter" || key.String() == "esc" || key.String() == " " {
@@ -121,9 +142,17 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	m.phase = phase
 	onComplete := tea.Cmd(func() tea.Msg { return msgSessionPhaseComplete{} })
 	switch phase {
+	case sessionPhasePreview:
+		m.preview = NewPreviewModel(m.cards, onComplete)
+		return m, m.preview.Init()
 	case sessionPhaseReview:
 		m.review = NewReviewModelWithCards(m.db, m.cards, onComplete)
 		return m, m.review.Init()
+	case sessionPhaseBrainDump1:
+		// BrainDump1 gives the learner a free-recall warm-up after Review.
+		// Using extractCards here because BrainDumpModel expects []db.Card (not CardWithReview).
+		m.brainDump1 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 1", onComplete)
+		return m, m.brainDump1.Init()
 	case sessionPhaseMatch:
 		cards := extractCards(m.cards)
 		m.match = NewMatchModelWithCards(m.db, cards, onComplete)
@@ -135,6 +164,11 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		cards := extractCards(m.cards)
 		m.blank = NewBlankModelWithCards(m.db, cards, onComplete)
 		return m, m.blank.Init()
+	case sessionPhaseBrainDump2:
+		// BrainDump2 runs after Blank as a final recall check before FSRS scoring.
+		// Scores here do NOT influence FSRS — only Review/Match/ReverseReview/Blank outcomes do.
+		m.brainDump2 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 2", onComplete)
+		return m, m.brainDump2.Init()
 	}
 	return m, nil
 }
@@ -142,12 +176,21 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 	database := m.db
 	switch m.phase {
+	case sessionPhasePreview:
+		return m.startPhase(sessionPhaseReview)
+
 	case sessionPhaseReview:
 		m.reviewDone = true
 		m.reviewCorrectIDs = m.review.correctIDs
+		// MarkReviewDone is called here (before BrainDump1) so that the daily
+		// session progress is recorded regardless of what happens in BrainDump.
 		markCmd := func() tea.Msg { db.MarkReviewDone(database); return nil }
-		m2, initCmd := m.startPhase(sessionPhaseMatch)
+		m2, initCmd := m.startPhase(sessionPhaseBrainDump1)
 		return m2, tea.Batch(markCmd, initCmd)
+
+	case sessionPhaseBrainDump1:
+		// BrainDump1 result is intentionally ignored for FSRS — advance straight to Match.
+		return m.startPhase(sessionPhaseMatch)
 
 	case sessionPhaseMatch:
 		m.matchDone = true
@@ -167,6 +210,14 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 		if m.blank.state == blankStateEmpty {
 			m.blankSkipped = true
 		}
+		// MarkBlankDone is called here so daily progress is saved before BrainDump2.
+		markCmd := func() tea.Msg { db.MarkBlankDone(database); return nil }
+		m2, initCmd := m.startPhase(sessionPhaseBrainDump2)
+		return m2, tea.Batch(markCmd, initCmd)
+
+	case sessionPhaseBrainDump2:
+		// BrainDump2 result does NOT feed into FSRS. FSRS scoring uses only
+		// Review/Match/ReverseReview/Blank correctness captured above.
 		m.phase = sessionPhaseDone
 		reviewCorrectIDs := m.reviewCorrectIDs
 		reverseCorrectIDs := m.reverseCorrectIDs
@@ -174,7 +225,6 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 		blankCorrectIDs := m.blank.correctIDs
 		cards := m.cards
 		markCmd := func() tea.Msg {
-			db.MarkBlankDone(database)
 			for _, cwr := range cards {
 				card := cwr.Card
 				reviewOK := containsID(reviewCorrectIDs, card.ID)
@@ -238,14 +288,20 @@ func (m SessionModel) View() string {
 	switch m.phase {
 	case sessionPhaseLoading:
 		return titleStyle.Render("Daily Session") + "\n\n" + subtitleStyle.Render("Loading cards...")
+	case sessionPhasePreview:
+		return m.preview.View()
 	case sessionPhaseReview:
 		return m.review.View()
+	case sessionPhaseBrainDump1:
+		return m.brainDump1.View()
 	case sessionPhaseMatch:
 		return m.match.View()
 	case sessionPhaseReverseReview:
 		return m.reverseReview.View()
 	case sessionPhaseBlank:
 		return m.blank.View()
+	case sessionPhaseBrainDump2:
+		return m.brainDump2.View()
 	case sessionPhaseDone:
 		return m.viewDone()
 	}

@@ -55,6 +55,33 @@ func TestListCards(t *testing.T) {
 	}
 }
 
+func TestCountCards(t *testing.T) {
+	database := openTestDB(t)
+
+	// Empty DB must return 0.
+	count, err := CountCards(database)
+	if err != nil {
+		t.Fatalf("CountCards: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+
+	// Insert 3 cards and verify count.
+	for i := 0; i < 3; i++ {
+		if _, err := CreateCard(database, fmt.Sprintf("f%d", i), "back", "", "", ""); err != nil {
+			t.Fatalf("CreateCard: %v", err)
+		}
+	}
+	count, err = CountCards(database)
+	if err != nil {
+		t.Fatalf("CountCards: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("expected 3, got %d", count)
+	}
+}
+
 func TestDeleteCard(t *testing.T) {
 	db := openTestDB(t)
 
@@ -407,10 +434,10 @@ func TestListDueCardsCarriesFSRSFields(t *testing.T) {
 }
 
 func TestCalcStreak(t *testing.T) {
-	today := time.Now().Format("2006-01-02")
-	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	twoDaysAgo := time.Now().AddDate(0, 0, -2).Format("2006-01-02")
-	threeDaysAgo := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	twoDaysAgo := time.Now().UTC().AddDate(0, 0, -2).Format("2006-01-02")
+	threeDaysAgo := time.Now().UTC().AddDate(0, 0, -3).Format("2006-01-02")
 
 	tests := []struct {
 		name  string
@@ -433,3 +460,4 @@ func TestCalcStreak(t *testing.T) {
 		})
 	}
 }
+

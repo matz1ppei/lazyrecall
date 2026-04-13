@@ -16,6 +16,14 @@ type Card struct {
 	CreatedAt          time.Time
 }
 
+// CountCards returns the total number of cards in the database.
+// Used at startup to detect the first-run (zero-card) state for onboarding.
+func CountCards(database *sql.DB) (int, error) {
+	var count int
+	err := database.QueryRow(`SELECT COUNT(*) FROM cards`).Scan(&count)
+	return count, err
+}
+
 func CreateCard(db *sql.DB, front, back, hint, example, exampleTranslation string) (int64, error) {
 	res, err := db.Exec(
 		`INSERT INTO cards (front, back, hint, example, example_translation) VALUES (?, ?, ?, ?, ?)`,
