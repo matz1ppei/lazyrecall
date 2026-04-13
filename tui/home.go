@@ -303,7 +303,7 @@ func (h HomeModel) handleImportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (h HomeModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("🃏  Anki Clone"))
+	b.WriteString(titleStyle.Render("🃏  LazyRecall"))
 	b.WriteString("\n\n")
 
 	if h.statsReady {
