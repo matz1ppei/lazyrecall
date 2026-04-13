@@ -85,7 +85,7 @@ func cachePath(langCode string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(cacheDir, "anki-claude", "dicts")
+	dir := filepath.Join(cacheDir, "lazyrecall", "dicts")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
