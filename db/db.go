@@ -49,5 +49,6 @@ func Open(path string) (*sql.DB, error) {
 	db.Exec(`ALTER TABLE reviews ADD COLUMN fsrs_state  INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE reviews ADD COLUMN lapses      INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE reviews ADD COLUMN last_review DATETIME`)
+	db.Exec(`ALTER TABLE daily_sessions ADD COLUMN auto_add_done INTEGER NOT NULL DEFAULT 0`)
 	return db, nil
 }

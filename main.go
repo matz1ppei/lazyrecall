@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 	"github.com/ippei/lazyrecall/tui"
 	"github.com/joho/godotenv"
@@ -24,7 +25,12 @@ func main() {
 		log.Fatalf("init ai: %v", err)
 	}
 
-	app := tui.New(database, aiClient)
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+
+	app := tui.New(database, aiClient, cfg)
 	if _, err := tea.NewProgram(app).Run(); err != nil {
 		log.Fatalf("run tui: %v", err)
 	}

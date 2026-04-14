@@ -163,7 +163,8 @@ func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, 
 		MaxTokens: int64(300 * len(words)),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(
-				`For each %s word listed, generate: "back" (English translation/meaning), "hint" (short memory mnemonic), "example" (one natural example sentence), "example_translation" (English translation of the example sentence). ` +
+				`For each %s word listed, generate: "back" (English translation/meaning), "hint" (short memory mnemonic), "example" (one natural example sentence that contains the word in its exact listed form), "example_translation" (English translation of the example sentence). ` +
+					`Important: the example sentence must use the word exactly as listed — do not conjugate or inflect it. ` +
 					`Words: %s. Return ONLY a JSON array: [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<English translation of example>"}, ...]`,
 				topic, string(wordsJSON),
 			))),
@@ -182,6 +183,9 @@ func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, 
 	var cards []generatedCard
 	if err := json.Unmarshal([]byte(jsonStr), &cards); err != nil {
 		return nil, fmt.Errorf("claude: parse JSON: %w", err)
+	}
+	if len(cards) > len(words) {
+		cards = cards[:len(words)]
 	}
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {

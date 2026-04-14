@@ -120,6 +120,53 @@ func TestBlankComplete(t *testing.T) {
 	}
 }
 
+func TestCanBlank(t *testing.T) {
+	// base form present → eligible
+	c1 := makeCard("hablar", "to speak", "Me gusta hablar español.", "I like to speak Spanish.")
+	if !canBlank(c1) {
+		t.Error("expected canBlank=true when front appears in example")
+	}
+	// conjugated form only → not eligible
+	c2 := makeCard("hablar", "to speak", "Yo hablo español.", "I speak Spanish.")
+	if canBlank(c2) {
+		t.Error("expected canBlank=false when only conjugated form appears in example")
+	}
+	// missing translation → not eligible
+	c3 := makeCard("hablar", "to speak", "Me gusta hablar.", "")
+	if canBlank(c3) {
+		t.Error("expected canBlank=false when translation is empty")
+	}
+}
+
+func TestBlankSentenceWordBoundary(t *testing.T) {
+	tests := []struct {
+		example string
+		front   string
+		want    string
+	}{
+		// standalone word
+		{"I like a dog", "a", "I like _ dog"},
+		// at start of sentence
+		{"a dog likes bones", "a", "_ dog likes bones"},
+		// at end of sentence
+		{"this is a", "a", "this is _"},
+		// inside a word — must NOT be replaced
+		{"cara mia", "a", "cara mia"},
+		// case-insensitive
+		{"Hola mundo.", "hola", "____ mundo."},
+		// accented word (whole word)
+		{"La canción es bonita.", "canción", "La _______ es bonita."},
+		// accented word NOT inside another word
+		{"decepción no es", "ción", "decepción no es"},
+	}
+	for _, tc := range tests {
+		got := blankSentence(tc.example, tc.front)
+		if got != tc.want {
+			t.Errorf("blankSentence(%q, %q) = %q, want %q", tc.example, tc.front, got, tc.want)
+		}
+	}
+}
+
 func TestBlankEscGoesHome(t *testing.T) {
 	cards := []db.Card{makeCard("hola", "hello", "Hola mundo.", "Hello world.")}
 	m := buildBlankModel(cards)

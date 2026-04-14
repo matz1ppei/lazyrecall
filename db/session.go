@@ -11,15 +11,16 @@ type DailySession struct {
 	MatchDone   bool
 	ReverseDone bool
 	BlankDone   bool
+	AutoAddDone bool
 }
 
 func GetTodaySession(database *sql.DB) (DailySession, error) {
 	today := time.Now().UTC().Format("2006-01-02")
 	var s DailySession
-	var rd, md, revd, bd int
+	var rd, md, revd, bd, aad int
 	err := database.QueryRow(
-		`SELECT date, review_done, match_done, reverse_done, blank_done FROM daily_sessions WHERE date = ?`, today,
-	).Scan(&s.Date, &rd, &md, &revd, &bd)
+		`SELECT date, review_done, match_done, reverse_done, blank_done, auto_add_done FROM daily_sessions WHERE date = ?`, today,
+	).Scan(&s.Date, &rd, &md, &revd, &bd, &aad)
 	if err == sql.ErrNoRows {
 		return DailySession{Date: today}, nil
 	}
@@ -30,6 +31,7 @@ func GetTodaySession(database *sql.DB) (DailySession, error) {
 	s.MatchDone = md == 1
 	s.ReverseDone = revd == 1
 	s.BlankDone = bd == 1
+	s.AutoAddDone = aad == 1
 	return s, nil
 }
 
@@ -53,6 +55,14 @@ func MarkReverseDone(database *sql.DB) error {
 	_, err := database.Exec(
 		`INSERT INTO daily_sessions (date, reverse_done) VALUES (date('now'), 1)
 		 ON CONFLICT(date) DO UPDATE SET reverse_done = 1`,
+	)
+	return err
+}
+
+func MarkAutoAddDone(database *sql.DB) error {
+	_, err := database.Exec(
+		`INSERT INTO daily_sessions (date, auto_add_done) VALUES (date('now'), 1)
+		 ON CONFLICT(date) DO UPDATE SET auto_add_done = 1`,
 	)
 	return err
 }

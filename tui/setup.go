@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 	"github.com/ippei/lazyrecall/dict"
 )
@@ -37,6 +38,7 @@ const (
 type SetupModel struct {
 	db               *sql.DB
 	ai               ai.Client
+	cfg              config.Config
 	state            setupState
 	langInput        textinput.Model
 	spinner          spinner.Model
@@ -53,7 +55,7 @@ type SetupModel struct {
 	nextBatchNum     int
 }
 
-func NewSetupModel(database *sql.DB, aiClient ai.Client) SetupModel {
+func NewSetupModel(database *sql.DB, aiClient ai.Client, cfg config.Config) SetupModel {
 	li := textinput.New()
 	li.Placeholder = "e.g. Spanish, French, Japanese"
 	li.CharLimit = 64
@@ -68,6 +70,7 @@ func NewSetupModel(database *sql.DB, aiClient ai.Client) SetupModel {
 	return SetupModel{
 		db:        database,
 		ai:        aiClient,
+		cfg:       cfg,
 		state:     setupStatePrompt,
 		langInput: li,
 		spinner:   sp,
@@ -144,6 +147,7 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if m.completedBatches >= msg.totalBatches {
 			m.state = setupStateDone
+			m.saveConfig()
 			return m, progressCmd
 		}
 
@@ -247,6 +251,17 @@ func (m SetupModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// saveConfig persists auto-add settings based on the setup language and marks
+// today's auto-add as done so the startup auto-add doesn't run again today.
+func (m *SetupModel) saveConfig() {
+	m.cfg.AutoAdd.Enabled = true
+	m.cfg.AutoAdd.Language = m.langCode
+	m.cfg.AutoAdd.LangName = m.langName
+	m.cfg.AutoAdd.Count = setupRequestedCount
+	_ = config.Save(m.cfg)
+	_ = db.MarkAutoAddDone(m.db)
 }
 
 func (m SetupModel) startCardGen() (tea.Model, tea.Cmd) {

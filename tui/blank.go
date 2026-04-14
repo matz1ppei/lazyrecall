@@ -67,7 +67,7 @@ func (m BlankModel) Init() tea.Cmd {
 		return func() tea.Msg {
 			var eligible []db.Card
 			for _, c := range cards {
-				if c.Example != "" && c.ExampleTranslation != "" {
+				if canBlank(c) {
 					eligible = append(eligible, c)
 				}
 			}
@@ -80,8 +80,23 @@ func (m BlankModel) Init() tea.Cmd {
 		if err != nil || len(cards) == 0 {
 			return msgBlankCards(nil)
 		}
-		return msgBlankCards(cards)
+		var eligible []db.Card
+		for _, c := range cards {
+			if canBlank(c) {
+				eligible = append(eligible, c)
+			}
+		}
+		return msgBlankCards(eligible)
 	}
+}
+
+// canBlank returns true when the card's front word appears (in any case) in the
+// example sentence as a whole word. Cards where the AI used a conjugated form
+// that doesn't match the base form are excluded from Blank Fill to avoid
+// showing an un-blanked sentence.
+func canBlank(c db.Card) bool {
+	return c.Example != "" && c.ExampleTranslation != "" &&
+		blankSentence(c.Example, c.Front) != c.Example
 }
 
 func (m BlankModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -178,10 +193,15 @@ func (m BlankModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // blankSentence replaces the target word in the example with underscores.
+// Matches whole words only: the word must be preceded and followed by a
+// non-letter/non-digit character (or start/end of string), so "a" in "cara"
+// is left untouched while standalone "a" is blanked.
+// Uses \pL (Unicode letter) to correctly handle accented chars like é, ñ.
 func blankSentence(example, front string) string {
-	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(front))
+	pattern := `(?i)(^|[^\pL\d])` + regexp.QuoteMeta(front) + `($|[^\pL\d])`
+	re := regexp.MustCompile(pattern)
 	blanks := strings.Repeat("_", len([]rune(front)))
-	return re.ReplaceAllString(example, blanks)
+	return re.ReplaceAllString(example, `${1}`+blanks+`${2}`)
 }
 
 func (m BlankModel) View() string {
