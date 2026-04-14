@@ -64,3 +64,29 @@ func MarkBlankDone(database *sql.DB) error {
 	)
 	return err
 }
+
+// GetRecentSessionDates は過去 days 日間の学習完了日の集合を返す。
+// いずれかのフェーズ（review/match/reverse/blank）が完了した日を対象とする。
+func GetRecentSessionDates(database *sql.DB, days int) (map[string]bool, error) {
+	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format("2006-01-02")
+	// date(date) でDATE型をYYYY-MM-DD文字列として取得する（ドライバのtime.Time変換を回避）
+	rows, err := database.Query(
+		`SELECT date(date) FROM daily_sessions
+		 WHERE date >= ?
+		   AND (review_done = 1 OR match_done = 1 OR reverse_done = 1 OR blank_done = 1)`,
+		cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]bool)
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		result[d] = true
+	}
+	return result, rows.Err()
+}

@@ -4,21 +4,24 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/db"
 )
 
 type msgStatsLoaded struct {
-	stats db.ReviewStats
-	err   error
+	stats       db.ReviewStats
+	recentDates map[string]bool
+	err         error
 }
 
 type StatsModel struct {
-	db    *sql.DB
-	stats db.ReviewStats
-	ready bool
-	err   string
+	db          *sql.DB
+	stats       db.ReviewStats
+	recentDates map[string]bool
+	ready       bool
+	err         string
 }
 
 func NewStatsModel(database *sql.DB) StatsModel {
@@ -29,7 +32,11 @@ func (m StatsModel) Init() tea.Cmd {
 	database := m.db
 	return func() tea.Msg {
 		s, err := db.GetReviewStats(database)
-		return msgStatsLoaded{stats: s, err: err}
+		if err != nil {
+			return msgStatsLoaded{err: err}
+		}
+		dates, err := db.GetRecentSessionDates(database, 28)
+		return msgStatsLoaded{stats: s, recentDates: dates, err: err}
 	}
 }
 
@@ -40,6 +47,7 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 		} else {
 			m.stats = msg.stats
+			m.recentDates = msg.recentDates
 			m.ready = true
 		}
 		return m, nil
@@ -82,6 +90,12 @@ func (m StatsModel) View() string {
 	b.WriteString(labelStyle.Render(fmt.Sprintf("  %s", streakLabel)))
 	b.WriteString("\n\n")
 
+	// Activity calendar
+	b.WriteString(subtitleStyle.Render("Activity (last 4 weeks)"))
+	b.WriteString("\n")
+	b.WriteString(renderCalendar(m.recentDates))
+	b.WriteString("\n")
+
 	// Card breakdown
 	b.WriteString(subtitleStyle.Render("Cards"))
 	b.WriteString("\n")
@@ -102,5 +116,46 @@ func (m StatsModel) View() string {
 	b.WriteString("\n\n")
 
 	b.WriteString(helpStyle.Render("[esc] back"))
+	return b.String()
+}
+
+// renderCalendar は過去4週間の学習カレンダーを生成する。
+// 最新週が一番下、今日が右下端になるよう配置する。
+func renderCalendar(dates map[string]bool) string {
+	var b strings.Builder
+	today := time.Now().UTC()
+	todayStr := today.Format("2006-01-02")
+
+	// 今週の月曜を起点に4週前の月曜を算出
+	weekday := int(today.Weekday())
+	if weekday == 0 {
+		weekday = 7 // 日曜を7に
+	}
+	monday := today.AddDate(0, 0, -(weekday - 1))    // 今週月曜
+	startMonday := monday.AddDate(0, 0, -7*3)        // 4週前の月曜
+
+	b.WriteString(helpStyle.Render("Mo Tu We Th Fr Sa Su"))
+	b.WriteString("\n")
+
+	for week := 0; week < 4; week++ {
+		var row strings.Builder
+		for day := 0; day < 7; day++ {
+			d := startMonday.AddDate(0, 0, week*7+day)
+			dStr := d.Format("2006-01-02")
+			if day > 0 {
+				row.WriteString(" ")
+			}
+			if dStr > todayStr {
+				// 未来は空白（ヘッダの2文字幅に合わせる）
+				row.WriteString("  ")
+			} else if dates[dStr] {
+				row.WriteString(successStyle.Render("##"))
+			} else {
+				row.WriteString(helpStyle.Render("--"))
+			}
+		}
+		b.WriteString(row.String())
+		b.WriteString("\n")
+	}
 	return b.String()
 }
