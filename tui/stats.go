@@ -126,21 +126,18 @@ func renderCalendar(dates map[string]bool) string {
 	today := time.Now().UTC()
 	todayStr := today.Format("2006-01-02")
 
-	// 今週の月曜を起点に4週前の月曜を算出
-	weekday := int(today.Weekday())
-	if weekday == 0 {
-		weekday = 7 // 日曜を7に
-	}
-	monday := today.AddDate(0, 0, -(weekday - 1))    // 今週月曜
-	startMonday := monday.AddDate(0, 0, -7*3)        // 4週前の月曜
+	// 今週の日曜を起点に4週前の日曜を算出
+	weekday := int(today.Weekday()) // 0=Sun, 1=Mon, ...
+	sunday := today.AddDate(0, 0, -weekday)      // 今週日曜
+	startSunday := sunday.AddDate(0, 0, -7*3)    // 4週前の日曜
 
-	b.WriteString(helpStyle.Render("Mo Tu We Th Fr Sa Su"))
+	b.WriteString(helpStyle.Render("Su Mo Tu We Th Fr Sa"))
 	b.WriteString("\n")
 
 	for week := 0; week < 4; week++ {
 		var row strings.Builder
 		for day := 0; day < 7; day++ {
-			d := startMonday.AddDate(0, 0, week*7+day)
+			d := startSunday.AddDate(0, 0, week*7+day)
 			dStr := d.Format("2006-01-02")
 			if day > 0 {
 				row.WriteString(" ")
