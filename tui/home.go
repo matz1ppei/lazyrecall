@@ -103,11 +103,7 @@ func NewHomeModel(database *sql.DB, aiClient ai.Client, cfg config.Config) HomeM
 }
 
 func (h HomeModel) Init() tea.Cmd {
-	cmds := []tea.Cmd{h.loadStats()}
-	if cmd := h.maybeAutoAddCmd(); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-	return tea.Batch(cmds...)
+	return h.loadStats()
 }
 
 func (h HomeModel) loadStats() tea.Cmd {
@@ -146,6 +142,12 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Redirect first-time users to the onboarding setup flow.
 		if h.total == 0 {
 			return h, func() tea.Msg { return MsgGotoScreen{Target: screenSetup} }
+		}
+		// Trigger auto-add only after stats are loaded so we know the DB is not empty.
+		// session.AutoAddDone comes from loadStats, avoiding a separate DB query.
+		if h.cfg.AutoAdd.Enabled && h.ai != nil && h.cfg.AutoAdd.Language != "" && !msg.session.AutoAddDone {
+			h.autoAdding = true
+			return h, h.autoAddCmd()
 		}
 		return h, nil
 
@@ -450,18 +452,11 @@ func (h HomeModel) saveConfig() (tea.Model, tea.Cmd) {
 	return h, nil
 }
 
-func (h HomeModel) maybeAutoAddCmd() tea.Cmd {
-	if !h.cfg.AutoAdd.Enabled || h.ai == nil || h.cfg.AutoAdd.Language == "" {
-		return nil
-	}
+func (h HomeModel) autoAddCmd() tea.Cmd {
 	database := h.db
 	aiClient := h.ai
 	cfg := h.cfg
 	return func() tea.Msg {
-		session, err := db.GetTodaySession(database)
-		if err != nil || session.AutoAddDone {
-			return nil
-		}
 		return runAutoAdd(database, aiClient, cfg)
 	}
 }
