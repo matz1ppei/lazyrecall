@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -172,64 +171,6 @@ func TestReviewSessionModeNoRateCard(t *testing.T) {
 	_ = time.Now() // test passed if no panic above
 }
 
-func buildReverseModeModel(cards []db.CardWithReview) ReviewModel {
-	// In reverse mode: question shows Back, correct answer is Front
-	m := ReviewModel{
-		state:        reviewStateQuestion,
-		cards:        cards,
-		choices:      []string{"hola", "perro", "gato"}, // Front values
-		correctIndex: 0,
-		cursorIndex:  0,
-		sessionMode:  true,
-		reverseMode:  true,
-	}
-	return m
-}
-
-func TestReverseModeViewShowsBack(t *testing.T) {
-	cards := makeReviewCards()
-	m := buildReverseModeModel(cards)
-
-	view := m.View()
-	// The question must contain the Back value of the first card
-	if !strings.Contains(view, "hello") {
-		t.Errorf("expected Back 'hello' in reverse mode view, got:\n%s", view)
-	}
-	// Title must be "Reverse Review"
-	if !strings.Contains(view, "Reverse Review") {
-		t.Errorf("expected 'Reverse Review' title in reverse mode view, got:\n%s", view)
-	}
-}
-
-func TestReverseModeCorrectAnswer(t *testing.T) {
-	cards := makeReviewCards()
-	m := buildReverseModeModel(cards)
-	m.cursorIndex = m.correctIndex // select correct Front
-
-	m = pressReviewKey(m, "enter")
-
-	if !m.lastCorrect {
-		t.Error("expected lastCorrect = true in reverse mode")
-	}
-	if len(m.correctIDs) != 1 || m.correctIDs[0] != cards[0].Card.ID {
-		t.Errorf("expected correctIDs = [%d], got %v", cards[0].Card.ID, m.correctIDs)
-	}
-}
-
-func TestReverseModeWrongAnswer(t *testing.T) {
-	cards := makeReviewCards()
-	m := buildReverseModeModel(cards)
-	m.cursorIndex = m.correctIndex + 1 // wrong
-
-	m = pressReviewKey(m, "enter")
-
-	if m.lastCorrect {
-		t.Error("expected lastCorrect = false in reverse mode")
-	}
-	if len(m.correctIDs) != 0 {
-		t.Errorf("expected correctIDs empty, got %v", m.correctIDs)
-	}
-}
 
 func TestTripleCorrectContainsID(t *testing.T) {
 	ids := []int64{1, 3, 5}

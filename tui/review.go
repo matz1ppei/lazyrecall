@@ -50,7 +50,6 @@ type ReviewModel struct {
 	ignoreLimit    bool
 	onComplete     tea.Cmd
 	sessionMode    bool
-	reverseMode    bool
 	choices        []string
 	correctIndex   int
 	cursorIndex    int
@@ -76,28 +75,6 @@ func NewReviewModelWithCards(database *sql.DB, cards []db.CardWithReview, onComp
 	}
 }
 
-func NewReverseReviewModel(database *sql.DB) ReviewModel {
-	return ReviewModel{
-		db:          database,
-		state:       reviewStateLoading,
-		reverseMode: true,
-	}
-}
-
-func NewReviewModelReverse(database *sql.DB, cards []db.CardWithReview, onComplete tea.Cmd) ReviewModel {
-	shuffled := make([]db.CardWithReview, len(cards))
-	copy(shuffled, cards)
-	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
-	return ReviewModel{
-		db:             database,
-		state:          reviewStateLoading,
-		preloadedCards: shuffled,
-		ignoreLimit:    true,
-		onComplete:     onComplete,
-		sessionMode:    true,
-		reverseMode:    true,
-	}
-}
 
 func (m ReviewModel) Init() tea.Cmd {
 	if len(m.preloadedCards) > 0 {
@@ -140,21 +117,12 @@ func (m ReviewModel) loadNextBatchCmd() tea.Cmd {
 func (m ReviewModel) loadChoicesCmd() tea.Cmd {
 	card := m.cards[m.index]
 	database := m.db
-	reverseMode := m.reverseMode
 	return func() tea.Msg {
 		distractors, _ := db.ListRandomCardsExcluding(database, 3, []int64{card.Card.ID})
-		var correct string
+		correct := card.Back
 		var distractorValues []string
-		if reverseMode {
-			correct = card.Front
-			for _, d := range distractors {
-				distractorValues = append(distractorValues, d.Front)
-			}
-		} else {
-			correct = card.Back
-			for _, d := range distractors {
-				distractorValues = append(distractorValues, d.Back)
-			}
+		for _, d := range distractors {
+			distractorValues = append(distractorValues, d.Back)
 		}
 		choices := append([]string{correct}, distractorValues...)
 		rand.Shuffle(len(choices), func(i, j int) { choices[i], choices[j] = choices[j], choices[i] })
@@ -281,11 +249,7 @@ func (m ReviewModel) rateCard(rating int) tea.Cmd {
 
 func (m ReviewModel) View() string {
 	var b strings.Builder
-	if m.reverseMode {
-		b.WriteString(titleStyle.Render("Reverse Review"))
-	} else {
-		b.WriteString(titleStyle.Render("Review Session"))
-	}
+	b.WriteString(titleStyle.Render("Review Session"))
 	b.WriteString("\n\n")
 
 	switch m.state {
@@ -311,11 +275,7 @@ func (m ReviewModel) View() string {
 		card := m.cards[m.index]
 		b.WriteString(labelStyle.Render(fmt.Sprintf("%d / %d", m.index+1, len(m.cards))))
 		b.WriteString("\n\n")
-		if m.reverseMode {
-			b.WriteString(cardFrontStyle.Render(card.Back))
-		} else {
-			b.WriteString(cardFrontStyle.Render(card.Front))
-		}
+		b.WriteString(cardFrontStyle.Render(card.Front))
 		b.WriteString("\n\n")
 		for i, choice := range m.choices {
 			if i == m.cursorIndex {

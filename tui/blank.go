@@ -71,9 +71,6 @@ func (m BlankModel) Init() tea.Cmd {
 					eligible = append(eligible, c)
 				}
 			}
-			if len(eligible) > 10 {
-				eligible = eligible[:10]
-			}
 			return msgBlankCards(eligible)
 		}
 	}
@@ -82,9 +79,6 @@ func (m BlankModel) Init() tea.Cmd {
 		cards, err := db.ListCardsWithTranslation(database)
 		if err != nil || len(cards) == 0 {
 			return msgBlankCards(nil)
-		}
-		if len(cards) > 10 {
-			cards = cards[:10]
 		}
 		return msgBlankCards(cards)
 	}
