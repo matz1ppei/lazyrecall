@@ -75,6 +75,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.screen = msg.Target
 		switch msg.Target {
 		case screenHome:
+			if cfg, err := config.Load(); err == nil {
+				a.cfg = cfg
+			}
 			a.home = NewHomeModel(a.db, a.ai, a.cfg)
 			return a, a.home.Init()
 		case screenAdd:
