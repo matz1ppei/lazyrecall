@@ -178,10 +178,15 @@ func (m BlankModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // blankSentence replaces the target word in the example with underscores.
+// Matches whole words only: the word must be preceded and followed by a
+// non-letter/non-digit character (or start/end of string), so "a" in "cara"
+// is left untouched while standalone "a" is blanked.
+// Uses \pL (Unicode letter) to correctly handle accented chars like é, ñ.
 func blankSentence(example, front string) string {
-	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(front))
+	pattern := `(?i)(^|[^\pL\d])` + regexp.QuoteMeta(front) + `($|[^\pL\d])`
+	re := regexp.MustCompile(pattern)
 	blanks := strings.Repeat("_", len([]rune(front)))
-	return re.ReplaceAllString(example, blanks)
+	return re.ReplaceAllString(example, `${1}`+blanks+`${2}`)
 }
 
 func (m BlankModel) View() string {
