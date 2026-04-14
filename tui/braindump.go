@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ippei/lazyrecall/ai"
 	"github.com/ippei/lazyrecall/db"
 )
 
@@ -101,7 +102,7 @@ func scoreInput(raw string, cards []db.Card) ([]bool, int) {
 			if matched[i] {
 				continue
 			}
-			if strings.EqualFold(tok, c.Front) {
+			if ai.MatchAnswer(tok, c.Front) {
 				matched[i] = true
 				count++
 				break
