@@ -215,7 +215,11 @@ func (m ReviewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.correctIDs = append(m.correctIDs, card.Card.ID)
 			}
 			m.state = reviewStateResult
-			tick := tea.Tick(600*time.Millisecond, func(time.Time) tea.Msg { return msgReviewResultReset{} })
+			delay := 600 * time.Millisecond
+			if !m.lastCorrect {
+				delay = 1500 * time.Millisecond
+			}
+			tick := tea.Tick(delay, func(time.Time) tea.Msg { return msgReviewResultReset{} })
 			if m.sessionMode {
 				return m, tick
 			}
