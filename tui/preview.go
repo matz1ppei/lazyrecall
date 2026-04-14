@@ -16,13 +16,10 @@ type msgPreviewTick struct{}
 // Its purpose is to lower cognitive load by letting the learner survey the material first.
 type PreviewModel struct {
 	cards      []db.CardWithReview
-	cursor     int // scroll offset for pagination
 	done       bool
 	onComplete tea.Cmd
 	startTime  time.Time
 }
-
-const previewPageSize = 15
 
 func NewPreviewModel(cards []db.CardWithReview, onComplete tea.Cmd) PreviewModel {
 	return PreviewModel{
@@ -58,17 +55,6 @@ func (m PreviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "esc":
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
-		case "down", "j":
-			if m.cursor+previewPageSize < len(m.cards) {
-				m.cursor += previewPageSize
-			}
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor -= previewPageSize
-				if m.cursor < 0 {
-					m.cursor = 0
-				}
-			}
 		}
 	}
 	return m, nil
@@ -87,27 +73,12 @@ func (m PreviewModel) View() string {
 		return b.String()
 	}
 
-	// Table header
 	b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-30s %s", "Front", "Back")))
 	b.WriteString("\n")
 
-	end := m.cursor + previewPageSize
-	if end > len(m.cards) {
-		end = len(m.cards)
-	}
-	for i := m.cursor; i < end; i++ {
-		c := m.cards[i]
+	for _, c := range m.cards {
 		line := fmt.Sprintf("  %-30s %s", truncate(c.Front, 30), truncate(c.Back, 40))
 		b.WriteString(labelStyle.Render(line))
-		b.WriteString("\n")
-	}
-
-	if len(m.cards) > previewPageSize {
-		total := len(m.cards)
-		page := m.cursor/previewPageSize + 1
-		pages := (total + previewPageSize - 1) / previewPageSize
-		b.WriteString("\n")
-		b.WriteString(subtitleStyle.Render(fmt.Sprintf("Page %d/%d", page, pages)))
 		b.WriteString("\n")
 	}
 
@@ -117,6 +88,6 @@ func (m PreviewModel) View() string {
 		remaining = 0
 	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render(fmt.Sprintf("[enter] skip  [↑↓/jk] scroll  auto-advance in %ds", remaining)))
+	b.WriteString(helpStyle.Render(fmt.Sprintf("[enter] skip  auto-advance in %ds", remaining)))
 	return b.String()
 }
