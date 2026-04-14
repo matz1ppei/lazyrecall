@@ -183,6 +183,9 @@ func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, 
 	if err := json.Unmarshal([]byte(jsonStr), &cards); err != nil {
 		return nil, fmt.Errorf("claude: parse JSON: %w", err)
 	}
+	if len(cards) > len(words) {
+		cards = cards[:len(words)]
+	}
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {
 		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}

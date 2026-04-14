@@ -214,6 +214,9 @@ func (c *OllamaClient) GenerateCardsForWords(ctx context.Context, topic string, 
 	if err := json.Unmarshal(wrapper.Items, &cards); err != nil {
 		return nil, fmt.Errorf("ollama: parse items: %w (items: %.300s)", err, string(wrapper.Items))
 	}
+	if len(cards) > len(words) {
+		cards = cards[:len(words)]
+	}
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {
 		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}
