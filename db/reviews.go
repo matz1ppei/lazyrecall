@@ -232,8 +232,9 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 	}
 
 	// streak: based on daily_sessions (any phase counts)
+	// date(date) でDATE型をYYYY-MM-DD文字列として取得する（ドライバのtime.Time変換を回避）
 	rows, err := db.Query(`
-		SELECT date FROM daily_sessions
+		SELECT date(date) FROM daily_sessions
 		WHERE review_done = 1 OR match_done = 1 OR blank_done = 1
 		ORDER BY date DESC
 		LIMIT 365
