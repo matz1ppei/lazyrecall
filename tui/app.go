@@ -108,7 +108,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.session = NewSessionModel(a.db, a.ai)
 			return a, a.session.Init()
 		case screenSetup:
-			a.setup = NewSetupModel(a.db, a.ai)
+			a.setup = NewSetupModel(a.db, a.ai, a.cfg)
 			return a, a.setup.Init()
 		}
 	case tea.KeyMsg:
