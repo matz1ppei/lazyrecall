@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -54,8 +55,10 @@ type SessionModel struct {
 	reverseReviewDone bool
 	blankDone        bool
 	blankSkipped     bool // no cards with translations
-	reviewCorrectIDs []int64
+	reviewCorrectIDs  []int64
 	reverseCorrectIDs []int64
+	startedAt         time.Time
+	finishedAt        time.Time
 }
 
 func NewSessionModel(database *sql.DB, aiClient ai.Client) SessionModel {
@@ -150,6 +153,7 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	onComplete := tea.Cmd(func() tea.Msg { return msgSessionPhaseComplete{} })
 	switch phase {
 	case sessionPhasePreview:
+		m.startedAt = time.Now()
 		m.preview = NewPreviewModel(m.cards, onComplete)
 		return m, m.preview.Init()
 	case sessionPhaseReview:
@@ -234,6 +238,7 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 		// BrainDump3 result does NOT feed into FSRS. FSRS scoring uses only
 		// Review/Match/ReverseReview/Blank correctness captured above.
 		m.phase = sessionPhaseDone
+		m.finishedAt = time.Now()
 		reviewCorrectIDs := m.reviewCorrectIDs
 		reverseCorrectIDs := m.reverseCorrectIDs
 		matchWrongIDs := m.match.wrongCardIDs
@@ -382,6 +387,13 @@ func (m SessionModel) viewDone() string {
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Streak continues! (%d / 4 phases complete)", done)))
 	}
 	b.WriteString("\n\n")
+	if !m.startedAt.IsZero() && !m.finishedAt.IsZero() {
+		elapsed := m.finishedAt.Sub(m.startedAt)
+		mins := int(math.Floor(elapsed.Minutes()))
+		secs := int(elapsed.Seconds()) % 60
+		b.WriteString(labelStyle.Render(fmt.Sprintf("Time: %dm %02ds", mins, secs)))
+		b.WriteString("\n\n")
+	}
 	b.WriteString(helpStyle.Render("[enter] back to home"))
 	return b.String()
 }
