@@ -67,7 +67,7 @@ func (m BlankModel) Init() tea.Cmd {
 		return func() tea.Msg {
 			var eligible []db.Card
 			for _, c := range cards {
-				if c.Example != "" && c.ExampleTranslation != "" {
+				if c.Example != "" {
 					eligible = append(eligible, c)
 				}
 			}
