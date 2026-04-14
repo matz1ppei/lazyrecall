@@ -136,7 +136,11 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.correctIDs = append(m.correctIDs, card.Card.ID)
 			}
 			m.state = reverseInputResult
-			tick := tea.Tick(600*time.Millisecond, func(time.Time) tea.Msg {
+			delay := 600 * time.Millisecond
+			if !m.lastCorrect {
+				delay = 1500 * time.Millisecond
+			}
+			tick := tea.Tick(delay, func(time.Time) tea.Msg {
 				return msgReverseInputResultReset{}
 			})
 			if m.sessionMode {
