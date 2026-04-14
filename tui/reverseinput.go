@@ -136,7 +136,7 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.correctIDs = append(m.correctIDs, card.Card.ID)
 			}
 			m.state = reverseInputResult
-			tick := tea.Tick(800*time.Millisecond, func(time.Time) tea.Msg {
+			tick := tea.Tick(600*time.Millisecond, func(time.Time) tea.Msg {
 				return msgReverseInputResultReset{}
 			})
 			if m.sessionMode {
