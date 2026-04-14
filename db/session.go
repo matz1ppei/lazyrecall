@@ -14,7 +14,7 @@ type DailySession struct {
 }
 
 func GetTodaySession(database *sql.DB) (DailySession, error) {
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().UTC().Format("2006-01-02")
 	var s DailySession
 	var rd, md, revd, bd int
 	err := database.QueryRow(

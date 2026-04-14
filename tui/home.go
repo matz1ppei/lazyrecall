@@ -111,6 +111,10 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.reviewedToday = msg.reviewedToday
 		h.session = msg.session
 		h.statsReady = true
+		// Redirect first-time users to the onboarding setup flow.
+		if h.total == 0 {
+			return h, func() tea.Msg { return MsgGotoScreen{Target: screenSetup} }
+		}
 		return h, nil
 
 	case msgImportDone:

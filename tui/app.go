@@ -21,6 +21,7 @@ const (
 	screenMatch
 	screenBlank
 	screenSession
+	screenSetup // first-run onboarding, appended last to preserve iota order
 )
 
 // MsgGotoScreen is sent by sub-models to request a screen transition.
@@ -41,6 +42,7 @@ type App struct {
 	match         MatchModel
 	blank         BlankModel
 	session       SessionModel
+	setup         SetupModel
 	db            *sql.DB
 	ai            ai.Client
 }
@@ -102,6 +104,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenSession:
 			a.session = NewSessionModel(a.db, a.ai)
 			return a, a.session.Init()
+		case screenSetup:
+			a.setup = NewSetupModel(a.db, a.ai)
+			return a, a.setup.Init()
 		}
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
@@ -177,6 +182,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated = m.(SessionModel)
 		a.session = updated
 		cmd = c
+	case screenSetup:
+		var updated SetupModel
+		m, c := a.setup.Update(msg)
+		updated = m.(SetupModel)
+		a.setup = updated
+		cmd = c
 	}
 	return a, cmd
 }
@@ -205,6 +216,8 @@ func (a *App) View() string {
 		return a.blank.View()
 	case screenSession:
 		return a.session.View()
+	case screenSetup:
+		return a.setup.View()
 	}
 	return ""
 }

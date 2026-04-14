@@ -27,10 +27,11 @@ func extractJSONArray(raw string) (string, error) {
 }
 
 type GeneratedCard struct {
-	Front   string
-	Back    string
-	Hint    string
-	Example string
+	Front              string
+	Back               string
+	Hint               string
+	Example            string
+	ExampleTranslation string
 }
 
 type WordPair struct {
