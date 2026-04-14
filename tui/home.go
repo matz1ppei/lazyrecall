@@ -9,7 +9,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
+	"github.com/ippei/lazyrecall/dict"
 	"github.com/ippei/lazyrecall/importer"
 )
 
@@ -22,6 +24,7 @@ const (
 	homeStateImport
 	homeStateDedup
 	homeStateGenerating
+	homeStateConfigure
 )
 
 const dailyReviewLimit = 100
@@ -49,33 +52,62 @@ type msgBatchDone struct {
 	errors    int
 }
 
+type msgAutoAddDone struct {
+	saved int
+	err   error
+}
+
 type HomeModel struct {
 	db            *sql.DB
 	ai            ai.Client
+	cfg           config.Config
 	state         homeState
 	total         int
 	due           int
 	overdue       int
 	reviewedToday int
 	statsReady    bool
+	autoAdding    bool
 	session       db.DailySession
 	importInput   textinput.Model
 	importMsg     string
+	// configure state
+	cfgLangInput  textinput.Model
+	cfgCountInput textinput.Model
+	cfgEnabled    bool
+	cfgInlineErr  string
+	cfgFocus      int // 0=enabled, 1=lang, 2=count
 }
 
-func NewHomeModel(database *sql.DB, aiClient ai.Client) HomeModel {
+func NewHomeModel(database *sql.DB, aiClient ai.Client, cfg config.Config) HomeModel {
 	ti := textinput.New()
 	ti.Placeholder = "path/to/cards.csv"
 	ti.CharLimit = 256
+
+	langInput := textinput.New()
+	langInput.Placeholder = "e.g. Spanish, French, Japanese"
+	langInput.CharLimit = 64
+
+	countInput := textinput.New()
+	countInput.Placeholder = "20"
+	countInput.CharLimit = 5
+
 	return HomeModel{
-		db: database,
-		ai: aiClient,
-		importInput: ti,
+		db:            database,
+		ai:            aiClient,
+		cfg:           cfg,
+		importInput:   ti,
+		cfgLangInput:  langInput,
+		cfgCountInput: countInput,
 	}
 }
 
 func (h HomeModel) Init() tea.Cmd {
-	return h.loadStats()
+	cmds := []tea.Cmd{h.loadStats()}
+	if cmd := h.maybeAutoAddCmd(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
 }
 
 func (h HomeModel) loadStats() tea.Cmd {
@@ -146,6 +178,15 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return h, h.loadStats()
 
+	case msgAutoAddDone:
+		h.autoAdding = false
+		if msg.err != nil {
+			h.importMsg = errorStyle.Render(fmt.Sprintf("Auto-add error: %v", msg.err))
+		} else if msg.saved > 0 {
+			h.importMsg = successStyle.Render(fmt.Sprintf("Auto-added %d cards today.", msg.saved))
+		}
+		return h, h.loadStats()
+
 	case tea.KeyMsg:
 		if h.state == homeStateImport {
 			return h.handleImportKey(msg)
@@ -161,6 +202,9 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if h.state == homeStatePractice {
 			return h.handlePracticeKey(msg)
+		}
+		if h.state == homeStateConfigure {
+			return h.handleConfigureKey(msg)
 		}
 		return h.handleNormalKey(msg)
 	}
@@ -183,6 +227,16 @@ func (h HomeModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		h.state = homeStateTools
 		h.importMsg = ""
+		return h, nil
+	case "c":
+		h.state = homeStateConfigure
+		h.cfgEnabled = h.cfg.AutoAdd.Enabled
+		h.cfgLangInput.SetValue(h.cfg.AutoAdd.LangName)
+		h.cfgCountInput.SetValue(fmt.Sprintf("%d", h.cfg.AutoAdd.Count))
+		h.cfgFocus = 0
+		h.cfgInlineErr = ""
+		h.cfgLangInput.Blur()
+		h.cfgCountInput.Blur()
 		return h, nil
 	case "q":
 		return h, tea.Quit
@@ -304,6 +358,152 @@ func (h HomeModel) handleImportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return h, cmd
 }
 
+func (h HomeModel) handleConfigureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		h.state = homeStateNormal
+		h.cfgLangInput.Blur()
+		h.cfgCountInput.Blur()
+		return h, nil
+	case "tab", "down":
+		h.cfgFocus = (h.cfgFocus + 1) % 3
+		return h, h.syncCfgFocus()
+	case "shift+tab", "up":
+		h.cfgFocus = (h.cfgFocus + 2) % 3
+		return h, h.syncCfgFocus()
+	case "enter":
+		if h.cfgFocus == 0 {
+			h.cfgEnabled = !h.cfgEnabled
+			return h, nil
+		}
+		if h.cfgFocus < 2 {
+			h.cfgFocus++
+			return h, h.syncCfgFocus()
+		}
+		// focus==2: save
+		return h.saveConfig()
+	}
+	var cmd tea.Cmd
+	if h.cfgFocus == 1 {
+		h.cfgLangInput, cmd = h.cfgLangInput.Update(msg)
+	} else if h.cfgFocus == 2 {
+		h.cfgCountInput, cmd = h.cfgCountInput.Update(msg)
+	}
+	return h, cmd
+}
+
+func (h HomeModel) syncCfgFocus() tea.Cmd {
+	switch h.cfgFocus {
+	case 1:
+		return h.cfgLangInput.Focus()
+	case 2:
+		h.cfgLangInput.Blur()
+		return h.cfgCountInput.Focus()
+	default:
+		h.cfgLangInput.Blur()
+		h.cfgCountInput.Blur()
+	}
+	return nil
+}
+
+func (h HomeModel) saveConfig() (tea.Model, tea.Cmd) {
+	langName := strings.TrimSpace(h.cfgLangInput.Value())
+	if langName == "" && h.cfgEnabled {
+		h.cfgInlineErr = "Language is required when auto-add is enabled."
+		return h, nil
+	}
+	var langCode string
+	if langName != "" {
+		code, name, ok := dict.DetectLang(langName)
+		if !ok {
+			h.cfgInlineErr = fmt.Sprintf("Unknown language: %q", langName)
+			return h, nil
+		}
+		langCode = code
+		langName = name
+	}
+	count := h.cfg.AutoAdd.Count
+	if raw := strings.TrimSpace(h.cfgCountInput.Value()); raw != "" {
+		n := 0
+		for _, ch := range raw {
+			if ch < '0' || ch > '9' {
+				h.cfgInlineErr = "Count must be a positive integer."
+				return h, nil
+			}
+			n = n*10 + int(ch-'0')
+		}
+		if n <= 0 {
+			h.cfgInlineErr = "Count must be greater than 0."
+			return h, nil
+		}
+		count = n
+	}
+	h.cfg.AutoAdd.Enabled = h.cfgEnabled
+	h.cfg.AutoAdd.Language = langCode
+	h.cfg.AutoAdd.LangName = langName
+	h.cfg.AutoAdd.Count = count
+	cfg := h.cfg
+	_ = config.Save(cfg)
+	h.state = homeStateNormal
+	h.cfgInlineErr = ""
+	h.importMsg = successStyle.Render("Settings saved.")
+	return h, nil
+}
+
+func (h HomeModel) maybeAutoAddCmd() tea.Cmd {
+	if !h.cfg.AutoAdd.Enabled || h.ai == nil || h.cfg.AutoAdd.Language == "" {
+		return nil
+	}
+	database := h.db
+	aiClient := h.ai
+	cfg := h.cfg
+	return func() tea.Msg {
+		session, err := db.GetTodaySession(database)
+		if err != nil || session.AutoAddDone {
+			return nil
+		}
+		return runAutoAdd(database, aiClient, cfg)
+	}
+}
+
+func runAutoAdd(database *sql.DB, aiClient ai.Client, cfg config.Config) tea.Msg {
+	existingFronts, err := db.GetAllFronts(database)
+	if err != nil {
+		return msgAutoAddDone{err: err}
+	}
+	words, err := dict.GetWords(cfg.AutoAdd.Language, 0)
+	if err != nil {
+		return msgAutoAddDone{err: err}
+	}
+	var newFronts []string
+	seen := make(map[string]bool)
+	for _, w := range words {
+		if len(newFronts) >= cfg.AutoAdd.Count {
+			break
+		}
+		key := strings.ToLower(w)
+		if existingFronts[key] || seen[key] {
+			continue
+		}
+		seen[key] = true
+		newFronts = append(newFronts, w)
+	}
+	if len(newFronts) == 0 {
+		_ = db.MarkAutoAddDone(database)
+		return msgAutoAddDone{}
+	}
+	cards, err := aiClient.GenerateCardsForWords(context.Background(), cfg.AutoAdd.LangName, newFronts)
+	if err != nil {
+		return msgAutoAddDone{err: err}
+	}
+	saved, _, err := saveBatch(database, cards)
+	if err != nil {
+		return msgAutoAddDone{err: err}
+	}
+	_ = db.MarkAutoAddDone(database)
+	return msgAutoAddDone{saved: saved}
+}
+
 func (h HomeModel) View() string {
 	var b strings.Builder
 
@@ -385,6 +585,31 @@ func (h HomeModel) View() string {
 		b.WriteString(helpStyle.Render("[esc] back"))
 	case homeStateGenerating:
 		b.WriteString(subtitleStyle.Render("Generating translations... Please wait."))
+	case homeStateConfigure:
+		b.WriteString(subtitleStyle.Render("Configure auto-add"))
+		b.WriteString("\n\n")
+		enabledLabel := "Disabled"
+		if h.cfgEnabled {
+			enabledLabel = "Enabled"
+		}
+		focusMarker := func(i int) string {
+			if h.cfgFocus == i {
+				return "> "
+			}
+			return "  "
+		}
+		b.WriteString(focusMarker(0) + keyStyle.Render("[e]") + menuItemStyle.Render(fmt.Sprintf(" Auto-add: %s", enabledLabel)))
+		b.WriteString("\n")
+		b.WriteString(focusMarker(1) + inputLabelStyle.Render("Language: ") + h.cfgLangInput.View())
+		b.WriteString("\n")
+		b.WriteString(focusMarker(2) + inputLabelStyle.Render("Count:    ") + h.cfgCountInput.View())
+		b.WriteString("\n")
+		if h.cfgInlineErr != "" {
+			b.WriteString("\n" + errorStyle.Render(h.cfgInlineErr))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("[tab] next  [e] toggle  [enter] save  [esc] cancel"))
 	default:
 		menu := []string{
 			keyStyle.Render("[d]") + menuItemStyle.Render(" Daily Session"),
@@ -393,10 +618,14 @@ func (h HomeModel) View() string {
 			keyStyle.Render("[l]") + menuItemStyle.Render(" List cards"),
 			keyStyle.Render("[s]") + menuItemStyle.Render(" Stats"),
 			keyStyle.Render("[t]") + menuItemStyle.Render(" Tools"),
+			keyStyle.Render("[c]") + menuItemStyle.Render(" Configure auto-add"),
 			keyStyle.Render("[q]") + menuItemStyle.Render(" Quit"),
 		}
 		for _, item := range menu {
 			b.WriteString("  " + item + "\n")
+		}
+		if h.autoAdding {
+			b.WriteString("\n" + subtitleStyle.Render("Auto-adding cards..."))
 		}
 		b.WriteString("\n\n")
 	}

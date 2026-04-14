@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 )
 
 type screen int
@@ -45,12 +46,13 @@ type App struct {
 	setup         SetupModel
 	db            *sql.DB
 	ai            ai.Client
+	cfg           config.Config
 }
 
-func New(db *sql.DB, aiClient ai.Client) *App {
+func New(db *sql.DB, aiClient ai.Client, cfg config.Config) *App {
 	return &App{
 		screen:    screenHome,
-		home:      NewHomeModel(db, aiClient),
+		home:      NewHomeModel(db, aiClient, cfg),
 		add:       NewAddModel(db, aiClient),
 		review:    NewReviewModel(db),
 		fetch:     NewFetchModel(db, aiClient),
@@ -59,6 +61,7 @@ func New(db *sql.DB, aiClient ai.Client) *App {
 		stats:     NewStatsModel(db),
 		db:        db,
 		ai:        aiClient,
+		cfg:       cfg,
 	}
 }
 
@@ -72,7 +75,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.screen = msg.Target
 		switch msg.Target {
 		case screenHome:
-			a.home = NewHomeModel(a.db, a.ai)
+			a.home = NewHomeModel(a.db, a.ai, a.cfg)
 			return a, a.home.Init()
 		case screenAdd:
 			a.add = NewAddModel(a.db, a.ai)
