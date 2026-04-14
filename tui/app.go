@@ -34,7 +34,7 @@ type App struct {
 	home          HomeModel
 	add           AddModel
 	review        ReviewModel
-	reverseReview ReviewModel
+	reverseReview ReverseInputModel
 	fetch         FetchModel
 	fetchLang     FetchLangModel
 	list          ListModel
@@ -81,7 +81,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.review = NewReviewModel(a.db)
 			return a, a.review.Init()
 		case screenReverseReview:
-			a.reverseReview = NewReverseReviewModel(a.db)
+			a.reverseReview = NewReverseInputModel(a.db)
 			return a, a.reverseReview.Init()
 		case screenFetch:
 			a.fetch = NewFetchModel(a.db, a.ai)
@@ -135,9 +135,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.review = updated
 		cmd = c
 	case screenReverseReview:
-		var updated ReviewModel
+		var updated ReverseInputModel
 		m, c := a.reverseReview.Update(msg)
-		updated = m.(ReviewModel)
+		updated = m.(ReverseInputModel)
 		a.reverseReview = updated
 		cmd = c
 	case screenFetch:

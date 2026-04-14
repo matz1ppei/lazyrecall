@@ -45,7 +45,7 @@ type SessionModel struct {
 	review           ReviewModel
 	brainDump1       BrainDumpModel
 	match            MatchModel
-	reverseReview    ReviewModel
+	reverseReview    ReverseInputModel
 	brainDump2       BrainDumpModel
 	blank            BlankModel
 	brainDump3       BrainDumpModel
@@ -117,7 +117,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionPhaseReverseReview:
 		updated, cmd := m.reverseReview.Update(msg)
-		m.reverseReview = updated.(ReviewModel)
+		m.reverseReview = updated.(ReverseInputModel)
 		return m, cmd
 
 	case sessionPhaseBrainDump2:
@@ -165,7 +165,7 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		m.match = NewMatchModelWithCards(m.db, cards, onComplete)
 		return m, m.match.Init()
 	case sessionPhaseReverseReview:
-		m.reverseReview = NewReviewModelReverse(m.db, m.cards, onComplete)
+		m.reverseReview = NewReverseInputModelWithCards(m.db, m.cards, onComplete)
 		return m, m.reverseReview.Init()
 	case sessionPhaseBrainDump2:
 		// BrainDump2 runs after ReverseReview. Scores do NOT influence FSRS.
