@@ -120,6 +120,24 @@ func TestBlankComplete(t *testing.T) {
 	}
 }
 
+func TestCanBlank(t *testing.T) {
+	// base form present → eligible
+	c1 := makeCard("hablar", "to speak", "Me gusta hablar español.", "I like to speak Spanish.")
+	if !canBlank(c1) {
+		t.Error("expected canBlank=true when front appears in example")
+	}
+	// conjugated form only → not eligible
+	c2 := makeCard("hablar", "to speak", "Yo hablo español.", "I speak Spanish.")
+	if canBlank(c2) {
+		t.Error("expected canBlank=false when only conjugated form appears in example")
+	}
+	// missing translation → not eligible
+	c3 := makeCard("hablar", "to speak", "Me gusta hablar.", "")
+	if canBlank(c3) {
+		t.Error("expected canBlank=false when translation is empty")
+	}
+}
+
 func TestBlankSentenceWordBoundary(t *testing.T) {
 	tests := []struct {
 		example string
