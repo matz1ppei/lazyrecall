@@ -136,7 +136,7 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.correctIDs = append(m.correctIDs, card.Card.ID)
 			}
 			m.state = reverseInputResult
-			tick := tea.Tick(1500*time.Millisecond, func(time.Time) tea.Msg {
+			tick := tea.Tick(800*time.Millisecond, func(time.Time) tea.Msg {
 				return msgReverseInputResultReset{}
 			})
 			if m.sessionMode {
@@ -147,7 +147,7 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				rating = 4
 			}
 			return m, tea.Batch(m.rateCard(rating), tick)
-		case "esc", "q":
+		case "esc":
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
 		default:
 			var cmd tea.Cmd
