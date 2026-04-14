@@ -119,11 +119,6 @@ func (m ReverseInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 
-	if m.state == reverseInputQuestion {
-		var cmd tea.Cmd
-		m.input, cmd = m.input.Update(msg)
-		return m, cmd
-	}
 	return m, nil
 }
 
@@ -154,6 +149,10 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.rateCard(rating), tick)
 		case "esc", "q":
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+		default:
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
 		}
 
 	case reverseInputResult:
