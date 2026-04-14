@@ -253,14 +253,15 @@ func (m SetupModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// saveConfig persists auto-add settings based on the setup language.
-// Enables auto-add so the chosen language is used from the next startup.
+// saveConfig persists auto-add settings based on the setup language and marks
+// today's auto-add as done so the startup auto-add doesn't run again today.
 func (m *SetupModel) saveConfig() {
 	m.cfg.AutoAdd.Enabled = true
 	m.cfg.AutoAdd.Language = m.langCode
 	m.cfg.AutoAdd.LangName = m.langName
 	m.cfg.AutoAdd.Count = setupRequestedCount
 	_ = config.Save(m.cfg)
+	_ = db.MarkAutoAddDone(m.db)
 }
 
 func (m SetupModel) startCardGen() (tea.Model, tea.Cmd) {
