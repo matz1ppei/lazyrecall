@@ -44,7 +44,7 @@ func submitInput(m BrainDumpModel) (BrainDumpModel, tea.Cmd) {
 // TestBrainDumpCaseFoldMatch verifies that matching is case-insensitive.
 func TestBrainDumpCaseFoldMatch(t *testing.T) {
 	cards := []db.Card{makeCardFront("Hello"), makeCardFront("World")}
-	count := scoreInput("hello, WORLD", cards)
+	_, count := scoreInput("hello, WORLD", cards)
 	if count != 2 {
 		t.Errorf("expected 2 case-insensitive matches, got %d", count)
 	}
@@ -53,7 +53,7 @@ func TestBrainDumpCaseFoldMatch(t *testing.T) {
 // TestBrainDumpTrimWhitespace verifies that tokens are trimmed before matching.
 func TestBrainDumpTrimWhitespace(t *testing.T) {
 	cards := []db.Card{makeCardFront("hello"), makeCardFront("world")}
-	count := scoreInput("  hello ,  world  ", cards)
+	_, count := scoreInput("  hello ,  world  ", cards)
 	if count != 2 {
 		t.Errorf("expected 2 matches after whitespace trim, got %d", count)
 	}
@@ -63,7 +63,7 @@ func TestBrainDumpTrimWhitespace(t *testing.T) {
 func TestBrainDumpZeroInput(t *testing.T) {
 	cards := []db.Card{makeCardFront("hello")}
 	for _, raw := range []string{"", "   ", ",,,", "  ,  "} {
-		count := scoreInput(raw, cards)
+		_, count := scoreInput(raw, cards)
 		if count != 0 {
 			t.Errorf("scoreInput(%q) = %d, want 0", raw, count)
 		}
@@ -73,7 +73,7 @@ func TestBrainDumpZeroInput(t *testing.T) {
 // TestBrainDumpNoDuplicateCount verifies that the same token repeated only counts once.
 func TestBrainDumpNoDuplicateCount(t *testing.T) {
 	cards := []db.Card{makeCardFront("hello")}
-	count := scoreInput("hello, hello, Hello", cards)
+	_, count := scoreInput("hello, hello, Hello", cards)
 	if count != 1 {
 		t.Errorf("expected 1 (no double-counting), got %d", count)
 	}

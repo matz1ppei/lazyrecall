@@ -27,10 +27,11 @@ type BrainDumpModel struct {
 	cards      []db.Card
 	input      textinput.Model
 	state      braindumpState
+	matched    []bool // matched[i] = true if cards[i] was recalled
 	matchCount int
 	totalCount int
 	onComplete tea.Cmd
-	label      string // "Brain Dump 1" or "Brain Dump 2"
+	label      string // "Brain Dump 1", "Brain Dump 2", or "Brain Dump 3"
 }
 
 func NewBrainDumpModel(cards []db.Card, label string, onComplete tea.Cmd) BrainDumpModel {
@@ -59,7 +60,7 @@ func (m BrainDumpModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			if msg.String() == "enter" {
-				m.matchCount = scoreInput(m.input.Value(), m.cards)
+				m.matched, m.matchCount = scoreInput(m.input.Value(), m.cards)
 				m.state = braindumpStateResult
 				return m, nil
 			}
@@ -79,17 +80,17 @@ func (m BrainDumpModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// scoreInput splits the raw input by commas, trims whitespace, and counts
-// how many tokens match any card's Front (case-insensitive).
-// Each card index is counted at most once to prevent inflated scores.
+// scoreInput splits the raw input by commas, trims whitespace, and checks
+// which cards were recalled (case-insensitive match against Front).
+// Returns a bool slice (matched[i] = true if cards[i] was recalled) and the count.
 // Index-based deduplication is used instead of card ID because test cards
 // (and any future in-memory cards) may share ID = 0.
-func scoreInput(raw string, cards []db.Card) int {
+func scoreInput(raw string, cards []db.Card) ([]bool, int) {
+	matched := make([]bool, len(cards))
 	if strings.TrimSpace(raw) == "" {
-		return 0
+		return matched, 0
 	}
 	tokens := strings.Split(raw, ",")
-	matchedIdx := make(map[int]bool)
 	count := 0
 	for _, tok := range tokens {
 		tok = strings.TrimSpace(tok)
@@ -97,17 +98,17 @@ func scoreInput(raw string, cards []db.Card) int {
 			continue
 		}
 		for i, c := range cards {
-			if matchedIdx[i] {
+			if matched[i] {
 				continue
 			}
 			if strings.EqualFold(tok, c.Front) {
-				matchedIdx[i] = true
+				matched[i] = true
 				count++
 				break
 			}
 		}
 	}
-	return count
+	return matched, count
 }
 
 func (m BrainDumpModel) View() string {
@@ -126,11 +127,22 @@ func (m BrainDumpModel) View() string {
 
 	case braindumpStateResult:
 		if m.matchCount == m.totalCount {
-			b.WriteString(successStyle.Render("Perfect! All words recalled!"))
+			b.WriteString(successStyle.Render(fmt.Sprintf("Perfect! All %d words recalled!", m.totalCount)))
 		} else {
 			b.WriteString(labelStyle.Render(fmt.Sprintf("%d / %d words recalled!", m.matchCount, m.totalCount)))
 		}
 		b.WriteString("\n\n")
+		for i, c := range m.cards {
+			if m.matched[i] {
+				b.WriteString(successStyle.Render("✓ " + c.Front))
+			} else {
+				b.WriteString(errorStyle.Render("✗ " + c.Front))
+			}
+			b.WriteString("  ")
+			b.WriteString(helpStyle.Render(c.Back))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("[enter] continue"))
 	}
 
