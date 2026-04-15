@@ -466,6 +466,7 @@ func runAutoAdd(database *sql.DB, aiClient ai.Client, cfg config.Config) tea.Msg
 	if err != nil {
 		return msgAutoAddDone{err: err}
 	}
+	excluded, _ := config.LoadExcludedWords()
 	words, err := dict.GetWords(cfg.AutoAdd.Language, 0)
 	if err != nil {
 		return msgAutoAddDone{err: err}
@@ -477,7 +478,7 @@ func runAutoAdd(database *sql.DB, aiClient ai.Client, cfg config.Config) tea.Msg
 			break
 		}
 		key := strings.ToLower(w)
-		if existingFronts[key] || seen[key] {
+		if excluded[key] || existingFronts[key] || seen[key] {
 			continue
 		}
 		seen[key] = true

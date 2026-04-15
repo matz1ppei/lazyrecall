@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 )
 
@@ -18,6 +19,7 @@ const (
 	listStateLoading listState = iota
 	listStateNormal
 	listStateConfirmDelete
+	listStateConfirmExclude
 	listStateEdit
 	listStateEmpty
 )
@@ -28,6 +30,7 @@ type msgListCards struct {
 
 type msgDeleteDone struct{ err error }
 type msgUpdateDone struct{ err error }
+type msgExcludeDone struct{ err error }
 
 type msgEditGenerated struct {
 	text        string
@@ -35,11 +38,14 @@ type msgEditGenerated struct {
 	err         error
 }
 
+type msgExcludedWords struct{ excluded map[string]bool }
+
 type ListModel struct {
 	db              *sql.DB
 	ai              ai.Client
 	state           listState
 	cards           []db.CardWithReview
+	excluded        map[string]bool
 	cursor          int
 	offset          int
 	errMsg          string
@@ -55,15 +61,25 @@ func NewListModel(database *sql.DB, aiClient ai.Client) ListModel {
 	return ListModel{db: database, ai: aiClient, state: listStateLoading}
 }
 
+func loadExcludedCmd() tea.Cmd {
+	return func() tea.Msg {
+		excluded, _ := config.LoadExcludedWords()
+		return msgExcludedWords{excluded: excluded}
+	}
+}
+
 func (m ListModel) Init() tea.Cmd {
 	database := m.db
-	return func() tea.Msg {
-		cards, err := db.ListAllCardsWithReview(database)
-		if err != nil {
-			return msgListCards{cards: nil}
-		}
-		return msgListCards{cards: cards}
-	}
+	return tea.Batch(
+		func() tea.Msg {
+			cards, err := db.ListAllCardsWithReview(database)
+			if err != nil {
+				return msgListCards{cards: nil}
+			}
+			return msgListCards{cards: cards}
+		},
+		loadExcludedCmd(),
+	)
 }
 
 func (m ListModel) reloadCmd() tea.Cmd {
@@ -103,6 +119,17 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.reloadCmd()
+
+	case msgExcludedWords:
+		m.excluded = msg.excluded
+		return m, nil
+
+	case msgExcludeDone:
+		if msg.err != nil {
+			m.errMsg = msg.err.Error()
+		}
+		m.state = listStateNormal
+		return m, loadExcludedCmd()
 
 	case msgEditGenerated:
 		m.editLoading = false
@@ -192,6 +219,21 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "d":
 			m.state = listStateConfirmDelete
 			m.errMsg = ""
+		case "x":
+			m.state = listStateConfirmExclude
+			m.errMsg = ""
+		}
+
+	case listStateConfirmExclude:
+		switch msg.String() {
+		case "y", "enter":
+			word := m.cards[m.cursor].Front
+			return m, func() tea.Msg {
+				err := config.AppendExcludedWord(word)
+				return msgExcludeDone{err: err}
+			}
+		case "n", "esc":
+			m.state = listStateNormal
 		}
 
 	case listStateConfirmDelete:
@@ -331,12 +373,12 @@ func (m ListModel) View() string {
 			b.WriteString("\n" + errorStyle.Render(m.errMsg))
 		}
 
-	case listStateNormal, listStateConfirmDelete:
+	case listStateNormal, listStateConfirmDelete, listStateConfirmExclude:
 		total := len(m.cards)
 		b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards total", total)))
 		b.WriteString("\n\n")
 
-		b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-12s %-20s %-30s %s", "ID", "Front", "Back", "Example", "Due")))
+		b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-3s %-12s %-20s %-30s %s", "ID", " x", "Front", "Back", "Example", "Due")))
 		b.WriteString("\n")
 
 		end := m.offset + listPageSize
@@ -345,8 +387,13 @@ func (m ListModel) View() string {
 		}
 		for i := m.offset; i < end; i++ {
 			c := m.cards[i]
-			line := fmt.Sprintf("%-4d %-12s %-20s %-30s %s",
+			mark := "   "
+			if m.excluded[strings.ToLower(c.Front)] {
+				mark = "[x]"
+			}
+			line := fmt.Sprintf("%-4d %s %-12s %-20s %-30s %s",
 				c.Card.ID,
+				mark,
 				truncate(c.Front, 12),
 				truncate(c.Back, 20),
 				truncate(c.Example, 30),
@@ -366,12 +413,17 @@ func (m ListModel) View() string {
 		}
 
 		b.WriteString("\n")
-		if m.state == listStateConfirmDelete {
+		switch m.state {
+		case listStateConfirmDelete:
 			card := m.cards[m.cursor]
 			b.WriteString(errorStyle.Render(fmt.Sprintf("Delete \"%s\"? ", truncate(card.Front, 30))))
 			b.WriteString(helpStyle.Render("[y/enter] yes  [n/esc] no"))
-		} else {
-			b.WriteString(helpStyle.Render("[↑/↓] scroll  [←/→] page  [e/enter] edit  [d] delete  [esc] back"))
+		case listStateConfirmExclude:
+			card := m.cards[m.cursor]
+			b.WriteString(subtitleStyle.Render(fmt.Sprintf("Add \"%s\" to exclusion list? ", truncate(card.Front, 30))))
+			b.WriteString(helpStyle.Render("[y/enter] yes  [n/esc] no"))
+		default:
+			b.WriteString(helpStyle.Render("[↑/↓] scroll  [←/→] page  [e/enter] edit  [d] delete  [x] exclude  [esc] back"))
 		}
 
 		if m.errMsg != "" {
