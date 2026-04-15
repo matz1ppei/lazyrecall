@@ -50,3 +50,36 @@ go run ./main.go
 go test ./...
 go build -o lazyrecall .
 ```
+
+## フォーマット・静的解析
+
+```bash
+gofmt -w .          # コードフォーマット（変更をファイルに書き戻す）
+go vet ./...        # 静的解析（標準ツール）
+```
+
+コミット前に必ず両方を実行すること。
+
+## ブランチ・PRワークフロー
+
+```bash
+# 1. フィーチャーブランチを作成
+git checkout -b feature/xxx
+
+# 2. 実装・コミット
+git add <files>
+git commit -m "feat: ..."
+
+# 3. リモートに push して PR を作成
+git push origin feature/xxx
+gh pr create --title "..." --body "..."
+
+# 4. GitHub 上でマージ後、ブランチを削除
+git checkout main
+git pull origin main
+git branch -d feature/xxx
+git push origin --delete feature/xxx
+```
+
+- ローカルで `git merge` して main に直接取り込まない
+- マージは必ず GitHub PR 上で行う
