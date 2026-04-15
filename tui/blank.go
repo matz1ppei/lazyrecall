@@ -10,13 +10,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 )
 
 type blankState int
 
 const (
-	blankStateLoading  blankState = iota
+	blankStateLoading blankState = iota
 	blankStatePlaying
 	blankStateResult
 	blankStateComplete
@@ -80,9 +81,10 @@ func (m BlankModel) Init() tea.Cmd {
 		if err != nil || len(cards) == 0 {
 			return msgBlankCards(nil)
 		}
+		excluded, _ := config.LoadExcludedWords()
 		var eligible []db.Card
 		for _, c := range cards {
-			if canBlank(c) {
+			if !excluded[strings.ToLower(c.Front)] && canBlank(c) {
 				eligible = append(eligible, c)
 			}
 		}

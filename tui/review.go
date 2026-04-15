@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 	"github.com/ippei/lazyrecall/srs"
 )
@@ -75,7 +76,6 @@ func NewReviewModelWithCards(database *sql.DB, cards []db.CardWithReview, onComp
 	}
 }
 
-
 func (m ReviewModel) Init() tea.Cmd {
 	if len(m.preloadedCards) > 0 {
 		cards := m.preloadedCards
@@ -99,7 +99,14 @@ func (m ReviewModel) Init() tea.Cmd {
 		if err != nil {
 			return msgDueCards{}
 		}
-		return msgDueCards{cards: cards, reviewedToday: reviewedToday}
+		excluded, _ := config.LoadExcludedWords()
+		var filtered []db.CardWithReview
+		for _, c := range cards {
+			if !excluded[strings.ToLower(c.Front)] {
+				filtered = append(filtered, c)
+			}
+		}
+		return msgDueCards{cards: filtered, reviewedToday: reviewedToday}
 	}
 }
 
@@ -110,7 +117,14 @@ func (m ReviewModel) loadNextBatchCmd() tea.Cmd {
 		if err != nil {
 			return msgDueCards{}
 		}
-		return msgDueCards{cards: cards}
+		excluded, _ := config.LoadExcludedWords()
+		var filtered []db.CardWithReview
+		for _, c := range cards {
+			if !excluded[strings.ToLower(c.Front)] {
+				filtered = append(filtered, c)
+			}
+		}
+		return msgDueCards{cards: filtered}
 	}
 }
 
