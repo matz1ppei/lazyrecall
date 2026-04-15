@@ -460,4 +460,3 @@ func TestCalcStreak(t *testing.T) {
 		})
 	}
 }
-

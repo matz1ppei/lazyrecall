@@ -18,12 +18,12 @@ func makeReviewCards() []db.CardWithReview {
 
 func buildReviewModel(cards []db.CardWithReview) ReviewModel {
 	m := ReviewModel{
-		state:       reviewStateQuestion,
-		cards:       cards,
-		choices:     []string{"hello", "dog", "cat"},
+		state:        reviewStateQuestion,
+		cards:        cards,
+		choices:      []string{"hello", "dog", "cat"},
 		correctIndex: 0,
-		cursorIndex: 0,
-		sessionMode: true, // no DB calls
+		cursorIndex:  0,
+		sessionMode:  true, // no DB calls
 	}
 	return m
 }
@@ -143,13 +143,13 @@ func TestReviewSessionModeNoRateCard(t *testing.T) {
 	// Verify by using nil db — if rateCard were called it would panic on nil.
 	cards := makeReviewCards()
 	m := ReviewModel{
-		db:          nil, // intentionally nil; rateCard would panic
-		state:       reviewStateQuestion,
-		cards:       cards,
-		choices:     []string{"hello", "dog", "cat"},
+		db:           nil, // intentionally nil; rateCard would panic
+		state:        reviewStateQuestion,
+		cards:        cards,
+		choices:      []string{"hello", "dog", "cat"},
 		correctIndex: 0,
-		cursorIndex: 0,
-		sessionMode: true,
+		cursorIndex:  0,
+		sessionMode:  true,
 	}
 
 	// Should not panic
@@ -170,7 +170,6 @@ func TestReviewSessionModeNoRateCard(t *testing.T) {
 	// (We can't easily wait 1.5s in a test, so just confirm no panic occurred)
 	_ = time.Now() // test passed if no panic above
 }
-
 
 func TestTripleCorrectContainsID(t *testing.T) {
 	ids := []int64{1, 3, 5}

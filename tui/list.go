@@ -400,9 +400,9 @@ func (m ListModel) View() string {
 				c.Review.DueDate,
 			)
 			if i == m.cursor {
-				b.WriteString(inputLabelStyle.Render("> "+line))
+				b.WriteString(inputLabelStyle.Render("> " + line))
 			} else {
-				b.WriteString(menuItemStyle.Render("  "+line))
+				b.WriteString(menuItemStyle.Render("  " + line))
 			}
 			b.WriteString("\n")
 		}

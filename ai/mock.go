@@ -4,17 +4,17 @@ import "context"
 
 // MockClient is a test double for the Client interface.
 type MockClient struct {
-	HintResult              string
-	HintErr                 error
-	ExampleResult           string
+	HintResult               string
+	HintErr                  error
+	ExampleResult            string
 	ExampleTranslationResult string
-	ExampleErr              error
-	TranslationResult       string
-	TranslationErr          error
-	CardFront               string
-	CardBack                string
-	CardHint                string
-	CardErr                 error
+	ExampleErr               error
+	TranslationResult        string
+	TranslationErr           error
+	CardFront                string
+	CardBack                 string
+	CardHint                 string
+	CardErr                  error
 }
 
 func (m *MockClient) GenerateHint(_ context.Context, _, _ string) (string, error) {

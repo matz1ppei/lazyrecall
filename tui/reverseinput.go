@@ -22,7 +22,7 @@ import (
 type reverseInputState int
 
 const (
-	reverseInputLoading  reverseInputState = iota
+	reverseInputLoading reverseInputState = iota
 	reverseInputQuestion
 	reverseInputResult
 	reverseInputSummary
