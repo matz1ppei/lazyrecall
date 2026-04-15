@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 	"github.com/ippei/lazyrecall/srs"
 )
@@ -16,15 +17,15 @@ import (
 type sessionPhase int
 
 const (
-	sessionPhaseLoading          sessionPhase = iota
-	sessionPhasePreview          // card survey before session begins
+	sessionPhaseLoading sessionPhase = iota
+	sessionPhasePreview              // card survey before session begins
 	sessionPhaseReview
-	sessionPhaseBrainDump1       // free-recall after Review
+	sessionPhaseBrainDump1 // free-recall after Review
 	sessionPhaseMatch
 	sessionPhaseReverseReview
-	sessionPhaseBrainDump2       // free-recall after ReverseReview
+	sessionPhaseBrainDump2 // free-recall after ReverseReview
 	sessionPhaseBlank
-	sessionPhaseBrainDump3       // free-recall after Blank
+	sessionPhaseBrainDump3 // free-recall after Blank
 	sessionPhaseDone
 )
 
@@ -38,23 +39,23 @@ type msgSessionPhaseComplete struct{}
 
 // SessionModel orchestrates Preview → Review → BrainDump1 → Match → ReverseReview → Blank → BrainDump2 as a daily session.
 type SessionModel struct {
-	db               *sql.DB
-	ai               ai.Client
-	phase            sessionPhase
-	cards            []db.CardWithReview
-	preview          PreviewModel
-	review           ReviewModel
-	brainDump1       BrainDumpModel
-	match            MatchModel
-	reverseReview    ReverseInputModel
-	brainDump2       BrainDumpModel
-	blank            BlankModel
-	brainDump3       BrainDumpModel
-	reviewDone       bool
-	matchDone        bool
+	db                *sql.DB
+	ai                ai.Client
+	phase             sessionPhase
+	cards             []db.CardWithReview
+	preview           PreviewModel
+	review            ReviewModel
+	brainDump1        BrainDumpModel
+	match             MatchModel
+	reverseReview     ReverseInputModel
+	brainDump2        BrainDumpModel
+	blank             BlankModel
+	brainDump3        BrainDumpModel
+	reviewDone        bool
+	matchDone         bool
 	reverseReviewDone bool
-	blankDone        bool
-	blankSkipped     bool // no cards with translations
+	blankDone         bool
+	blankSkipped      bool // no cards with translations
 	reviewCorrectIDs  []int64
 	reverseCorrectIDs []int64
 	startedAt         time.Time
@@ -76,7 +77,17 @@ func (m SessionModel) Init() tea.Cmd {
 		if err != nil || len(cards) == 0 {
 			return msgSessionReady{cards: nil}
 		}
-		return msgSessionReady{cards: cards}
+		excluded, _ := config.LoadExcludedWords()
+		var filtered []db.CardWithReview
+		for _, c := range cards {
+			if !excluded[strings.ToLower(c.Front)] {
+				filtered = append(filtered, c)
+			}
+		}
+		if len(filtered) == 0 {
+			return msgSessionReady{cards: nil}
+		}
+		return msgSessionReady{cards: filtered}
 	}
 }
 

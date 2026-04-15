@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 )
 
@@ -26,7 +27,6 @@ const (
 	matchQueueSize  = 20
 	matchWrongFlash = 1200 * time.Millisecond
 )
-
 
 type matchItem struct {
 	cardID  int64
@@ -108,7 +108,14 @@ func (m MatchModel) Init() tea.Cmd {
 		if err != nil {
 			return msgMatchCards(nil)
 		}
-		return msgMatchCards(cards)
+		excluded, _ := config.LoadExcludedWords()
+		var filtered []db.Card
+		for _, c := range cards {
+			if !excluded[strings.ToLower(c.Front)] {
+				filtered = append(filtered, c)
+			}
+		}
+		return msgMatchCards(filtered)
 	}
 }
 
@@ -244,7 +251,7 @@ func (m MatchModel) moveCursorDir(col, dir int) MatchModel {
 		current = m.rightCursor
 	}
 	for i := 1; i <= n; i++ {
-		next := ((current + dir*i) % n + n) % n
+		next := ((current+dir*i)%n + n) % n
 		if !items[next].matched {
 			if col == 0 {
 				m.leftCursor = next
