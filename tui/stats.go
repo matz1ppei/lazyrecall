@@ -127,9 +127,9 @@ func renderCalendar(dates map[string]bool) string {
 	todayStr := today.Format("2006-01-02")
 
 	// 今週の日曜を起点に4週前の日曜を算出
-	weekday := int(today.Weekday()) // 0=Sun, 1=Mon, ...
-	sunday := today.AddDate(0, 0, -weekday)      // 今週日曜
-	startSunday := sunday.AddDate(0, 0, -7*3)    // 4週前の日曜
+	weekday := int(today.Weekday())           // 0=Sun, 1=Mon, ...
+	sunday := today.AddDate(0, 0, -weekday)   // 今週日曜
+	startSunday := sunday.AddDate(0, 0, -7*3) // 4週前の日曜
 
 	b.WriteString(helpStyle.Render("Su Mo Tu We Th Fr Sa"))
 	b.WriteString("\n")

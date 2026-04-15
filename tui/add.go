@@ -265,14 +265,14 @@ func (m AddModel) View() string {
 				b.WriteString(labelStyle.Render("Translation: ") + m.exampleTranslation)
 			}
 		} else if addStep(i) == m.step {
-			b.WriteString(inputLabelStyle.Render(label+":"))
+			b.WriteString(inputLabelStyle.Render(label + ":"))
 			b.WriteString("\n")
 			b.WriteString(m.inputs[i].View())
 			if (i == int(stepHint) || i == int(stepExample)) && m.ai != nil {
 				b.WriteString("\n" + helpStyle.Render("[ctrl+g] generate with AI"))
 			}
 		} else {
-			b.WriteString(subtitleStyle.Render(label+": ..."))
+			b.WriteString(subtitleStyle.Render(label + ": ..."))
 		}
 		b.WriteString("\n")
 	}

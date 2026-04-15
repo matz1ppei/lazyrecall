@@ -21,7 +21,7 @@ import (
 type fetchLangState int
 
 const (
-	fetchLangIdle        fetchLangState = iota
+	fetchLangIdle fetchLangState = iota
 	fetchLangCount
 	fetchLangDownloading
 	fetchLangCardGen
@@ -37,20 +37,20 @@ type msgDictReady struct {
 }
 
 type FetchLangModel struct {
-	db             *sql.DB
-	ai             ai.Client
-	state          fetchLangState
-	langInput      textinput.Model
-	countInput     textinput.Model
-	spinner        spinner.Model
-	progress       progress.Model
-	inlineErr      string
-	errMsg         string
-	savedCount     int
-	skippedCount   int
-	langCode       string
-	langName       string
-	requestedCount int
+	db               *sql.DB
+	ai               ai.Client
+	state            fetchLangState
+	langInput        textinput.Model
+	countInput       textinput.Model
+	spinner          spinner.Model
+	progress         progress.Model
+	inlineErr        string
+	errMsg           string
+	savedCount       int
+	skippedCount     int
+	langCode         string
+	langName         string
+	requestedCount   int
 	pendingWords     []ai.WordPair
 	totalBatches     int
 	completedBatches int

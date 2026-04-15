@@ -85,7 +85,7 @@ func TestBrainDumpResultViewNormal(t *testing.T) {
 	m, _ := buildBrainDumpModel(cards)
 
 	// Type only one matching word, then submit.
-	m = setInputValue(m,"apple")
+	m = setInputValue(m, "apple")
 	m, _ = submitInput(m)
 
 	view := m.View()
@@ -103,7 +103,7 @@ func TestBrainDumpPerfectMessage(t *testing.T) {
 	cards := []db.Card{makeCardFront("apple"), makeCardFront("banana")}
 	m, _ := buildBrainDumpModel(cards)
 
-	m = setInputValue(m,"apple, banana")
+	m = setInputValue(m, "apple, banana")
 	m, _ = submitInput(m)
 
 	view := m.View()

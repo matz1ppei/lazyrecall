@@ -19,7 +19,7 @@ type braindumpState int
 
 const (
 	braindumpStateInput  braindumpState = iota // waiting for comma-separated input
-	braindumpStateResult                        // showing match count
+	braindumpStateResult                       // showing match count
 )
 
 // BrainDumpModel collects free recall from the learner and reports how many
