@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 	"github.com/ippei/lazyrecall/dict"
 )
@@ -123,6 +124,7 @@ func (m FetchLangModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errMsg = err.Error()
 			return m, nil
 		}
+		excluded, _ := config.LoadExcludedWords()
 		seen := make(map[string]bool)
 		var newWords []ai.WordPair
 		dbSkipped := 0
@@ -131,6 +133,10 @@ func (m FetchLangModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			key := strings.ToLower(w)
+			if excluded[key] {
+				dbSkipped++
+				continue
+			}
 			if existingFronts[key] {
 				dbSkipped++
 				continue

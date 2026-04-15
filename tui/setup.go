@@ -109,6 +109,7 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errMsg = err.Error()
 			return m, nil
 		}
+		excluded, _ := config.LoadExcludedWords()
 		seen := make(map[string]bool)
 		var newWords []ai.WordPair
 		for _, w := range msg.words {
@@ -116,7 +117,7 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			key := strings.ToLower(w)
-			if existingFronts[key] || seen[key] {
+			if excluded[key] || existingFronts[key] || seen[key] {
 				continue
 			}
 			seen[key] = true
