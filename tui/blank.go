@@ -77,13 +77,14 @@ func (m BlankModel) Init() tea.Cmd {
 	}
 	database := m.db
 	return func() tea.Msg {
-		cards, err := db.ListCardsWithTranslation(database)
-		if err != nil || len(cards) == 0 {
+		cwrs, err := db.ListDueCards(database, reviewSessionSize)
+		if err != nil || len(cwrs) == 0 {
 			return msgBlankCards(nil)
 		}
 		excluded, _ := config.LoadExcludedWords()
 		var eligible []db.Card
-		for _, c := range cards {
+		for _, cwr := range cwrs {
+			c := cwr.Card
 			if !excluded[strings.ToLower(c.Front)] && canBlank(c) {
 				eligible = append(eligible, c)
 			}

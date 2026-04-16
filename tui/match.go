@@ -75,6 +75,7 @@ type MatchModel struct {
 	reviewErr            string
 	preloadedCards       []db.Card
 	sessionMode          bool
+	quitting             bool
 	onComplete           tea.Cmd
 }
 
@@ -161,6 +162,15 @@ func (m MatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.quitting {
+			switch msg.String() {
+			case "y":
+				return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: "Match Madness: esc で中断"} }
+			case "n", "esc":
+				m.quitting = false
+			}
+			return m, nil
+		}
 		switch m.state {
 		case matchStateComplete, matchStateEmpty:
 			return m.handleEndKey(msg)
@@ -217,7 +227,8 @@ func (m MatchModel) handleEndKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m MatchModel) handlePlayKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	if key == "esc" {
-		return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+		m.quitting = true
+		return m, nil
 	}
 	if m.state == matchStateWrong {
 		return m, nil
@@ -376,6 +387,13 @@ func (m MatchModel) View() string {
 	b.WriteString(titleStyle.Render("Match Madness"))
 	b.WriteString("\n\n")
 
+	if m.quitting {
+		b.WriteString(labelStyle.Render("Match Madness を中断しますか？"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("%s  %s", keyStyle.Render("[y] 中断"), keyStyle.Render("[n] 続ける")))
+		return b.String()
+	}
+
 	switch m.state {
 	case matchStateLoading:
 		b.WriteString(subtitleStyle.Render("Loading..."))
@@ -393,8 +411,8 @@ func (m MatchModel) View() string {
 
 	// Playing or wrong flash
 	n := len(m.leftItems)
-	leftWidth := 22
-	rightWidth := 36
+	leftWidth := 20
+	rightWidth := 42
 	for i := 0; i < n; i++ {
 		b.WriteString("  " + m.renderItem(0, i, leftWidth) + "    " + m.renderItem(1, i, rightWidth) + "\n")
 	}
