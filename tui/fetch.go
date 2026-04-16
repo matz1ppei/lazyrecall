@@ -513,7 +513,7 @@ func saveBatch(database *sql.DB, cards []ai.GeneratedCard) (saved, skipped int, 
 			skipped++
 			continue
 		}
-		id, e := db.CreateCard(database, c.Front, c.Back, c.Hint, c.Example, c.ExampleTranslation)
+		id, e := db.CreateCard(database, c.Front, c.Back, c.Hint, c.Example, c.ExampleTranslation, c.ExampleWord)
 		if e != nil {
 			return saved, skipped, e
 		}

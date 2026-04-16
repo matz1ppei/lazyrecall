@@ -32,7 +32,8 @@ const (
 const sessionCardLimit = 20
 
 type msgSessionReady struct {
-	cards []db.CardWithReview
+	cards  []db.CardWithReview
+	reason string // non-empty when session cannot start (e.g. DB error, no cards)
 }
 
 type msgSessionPhaseComplete struct{}
@@ -74,8 +75,11 @@ func (m SessionModel) Init() tea.Cmd {
 	database := m.db
 	return func() tea.Msg {
 		cards, err := db.SelectSessionCards(database, sessionCardLimit)
-		if err != nil || len(cards) == 0 {
-			return msgSessionReady{cards: nil}
+		if err != nil {
+			return msgSessionReady{reason: fmt.Sprintf("DB error loading cards: %v", err)}
+		}
+		if len(cards) == 0 {
+			return msgSessionReady{reason: "no cards found"}
 		}
 		excluded, _ := config.LoadExcludedWords()
 		var filtered []db.CardWithReview
@@ -85,7 +89,7 @@ func (m SessionModel) Init() tea.Cmd {
 			}
 		}
 		if len(filtered) == 0 {
-			return msgSessionReady{cards: nil}
+			return msgSessionReady{reason: "all cards are in the exclude list"}
 		}
 		return msgSessionReady{cards: filtered}
 	}
@@ -97,8 +101,11 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case msgSessionReady:
 		if len(msg.cards) == 0 {
-			m.phase = sessionPhaseDone
-			return m, nil
+			reason := msg.reason
+			if reason == "" {
+				reason = "session ended: no cards"
+			}
+			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: "Session could not start: " + reason} }
 		}
 		m.cards = msg.cards
 		return m.startPhase(sessionPhasePreview)

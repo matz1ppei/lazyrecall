@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS cards (
     hint        TEXT    NOT NULL DEFAULT '',
     example             TEXT    NOT NULL DEFAULT '',
     example_translation TEXT    NOT NULL DEFAULT '',
+    example_word        TEXT    NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 

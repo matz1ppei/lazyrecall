@@ -132,7 +132,7 @@ func scanReview(
 
 func ListAllCardsWithReview(db *sql.DB) ([]CardWithReview, error) {
 	rows, err := db.Query(
-		`SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.created_at,
+		`SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.example_word, c.created_at,
 		        COALESCE(r.id,0), COALESCE(r.card_id,0), COALESCE(r.due_date,''), COALESCE(r.interval,1),
 		        COALESCE(r.ease_factor,2.5), COALESCE(r.repetitions,0), r.last_rating, r.reviewed_at,
 		        COALESCE(r.stability,0), COALESCE(r.difficulty,0), COALESCE(r.fsrs_state,0),
@@ -154,7 +154,7 @@ func ListAllCardsWithReview(db *sql.DB) ([]CardWithReview, error) {
 		var reviewedAt sql.NullString
 		var lastReview sql.NullString
 		if err := rows.Scan(
-			&cwr.Card.ID, &cwr.Front, &cwr.Back, &cwr.Hint, &cwr.Example, &cwr.Card.ExampleTranslation, &createdAt,
+			&cwr.Card.ID, &cwr.Front, &cwr.Back, &cwr.Hint, &cwr.Example, &cwr.Card.ExampleTranslation, &cwr.Card.ExampleWord, &createdAt,
 			&cwr.Review.ID, &cwr.Review.CardID, &cwr.Review.DueDate,
 			&cwr.Review.Interval, &cwr.Review.EaseFactor, &cwr.Review.Repetitions,
 			&lastRating, &reviewedAt,
@@ -290,7 +290,7 @@ func CountReviewedToday(db *sql.DB) (int, error) {
 
 func ListDueCards(db *sql.DB, limit int) ([]CardWithReview, error) {
 	rows, err := db.Query(
-		`SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.created_at,
+		`SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.example_word, c.created_at,
 		        r.id, r.card_id, r.due_date, r.interval, r.ease_factor, r.repetitions, r.last_rating, r.reviewed_at,
 		        r.stability, r.difficulty, r.fsrs_state, r.lapses, r.last_review
 		 FROM cards c
@@ -313,7 +313,7 @@ func ListDueCards(db *sql.DB, limit int) ([]CardWithReview, error) {
 		var reviewedAt sql.NullString
 		var lastReview sql.NullString
 		if err := rows.Scan(
-			&cwr.Card.ID, &cwr.Front, &cwr.Back, &cwr.Hint, &cwr.Example, &cwr.Card.ExampleTranslation, &createdAt,
+			&cwr.Card.ID, &cwr.Front, &cwr.Back, &cwr.Hint, &cwr.Example, &cwr.Card.ExampleTranslation, &cwr.Card.ExampleWord, &createdAt,
 			&cwr.Review.ID, &cwr.Review.CardID, &cwr.Review.DueDate,
 			&cwr.Review.Interval, &cwr.Review.EaseFactor, &cwr.Review.Repetitions,
 			&lastRating, &reviewedAt,

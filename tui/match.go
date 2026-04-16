@@ -199,7 +199,11 @@ func (m MatchModel) handleEndKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.onComplete != nil {
 			return m, m.onComplete
 		}
-		return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+		reason := ""
+		if m.state == matchStateEmpty {
+			reason = "Match skipped: fewer than 2 cards available"
+		}
+		return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: reason} }
 	case "r":
 		if m.sessionMode {
 			return m, nil

@@ -204,7 +204,11 @@ func (m ReviewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.onComplete != nil {
 				return m, m.onComplete
 			}
-			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+			reason := ""
+			if m.state == reviewStateEmpty {
+				reason = "Review skipped: no due cards"
+			}
+			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: reason} }
 		}
 
 	case reviewStateLimitReached:
