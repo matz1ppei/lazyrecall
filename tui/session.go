@@ -159,7 +159,9 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionPhaseDone:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			if key.String() == "enter" || key.String() == "esc" || key.String() == " " {
-				return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+				return m, func() tea.Msg {
+					return MsgGotoScreen{Target: screenHome, Reason: "Session completed"}
+				}
 			}
 		}
 	}

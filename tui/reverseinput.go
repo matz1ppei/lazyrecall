@@ -167,7 +167,11 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.onComplete != nil {
 				return m, m.onComplete
 			}
-			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+			reason := ""
+			if m.state == reverseInputEmpty {
+				reason = "Reverse review skipped: no cards available"
+			}
+			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: reason} }
 		}
 	}
 	return m, nil

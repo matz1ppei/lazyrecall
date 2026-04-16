@@ -393,9 +393,10 @@ func (m MatchModel) View() string {
 
 	// Playing or wrong flash
 	n := len(m.leftItems)
-	colWidth := 22
+	leftWidth := 22
+	rightWidth := 36
 	for i := 0; i < n; i++ {
-		b.WriteString("  " + m.renderItem(0, i, colWidth) + "    " + m.renderItem(1, i, colWidth) + "\n")
+		b.WriteString("  " + m.renderItem(0, i, leftWidth) + "    " + m.renderItem(1, i, rightWidth) + "\n")
 	}
 
 	b.WriteString("\n")
