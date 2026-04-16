@@ -56,6 +56,7 @@ type ReviewModel struct {
 	cursorIndex    int
 	lastCorrect    bool
 	correctIDs     []int64
+	quitting       bool
 }
 
 func NewReviewModel(database *sql.DB) ReviewModel {
@@ -192,6 +193,15 @@ func (m ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadChoicesCmd()
 
 	case tea.KeyMsg:
+		if m.quitting {
+			switch msg.String() {
+			case "y":
+				return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: "Review: esc/q で中断"} }
+			case "n", "esc":
+				m.quitting = false
+			}
+			return m, nil
+		}
 		return m.handleKey(msg)
 	}
 	return m, nil
@@ -217,7 +227,9 @@ func (m ReviewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = reviewStateLoading
 			return m, m.loadNextBatchCmd()
 		case "n", "enter", "esc":
-			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+			return m, func() tea.Msg {
+				return MsgGotoScreen{Target: screenHome, Reason: "Review: 上限到達のため終了"}
+			}
 		}
 
 	case reviewStateQuestion:
@@ -247,7 +259,8 @@ func (m ReviewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(m.rateCard(rating), tick)
 		case "esc", "q":
-			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+			m.quitting = true
+			return m, nil
 		}
 	}
 	return m, nil
@@ -273,6 +286,13 @@ func (m ReviewModel) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Review Session"))
 	b.WriteString("\n\n")
+
+	if m.quitting {
+		b.WriteString(labelStyle.Render("Review を中断しますか？"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("%s  %s", keyStyle.Render("[y] 中断"), keyStyle.Render("[n] 続ける")))
+		return b.String()
+	}
 
 	switch m.state {
 	case reviewStateLoading:

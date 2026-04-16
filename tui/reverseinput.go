@@ -47,6 +47,7 @@ type ReverseInputModel struct {
 	correctIDs     []int64
 	preloadedCards []db.CardWithReview
 	sessionMode    bool
+	quitting       bool
 	onComplete     tea.Cmd
 }
 
@@ -116,6 +117,15 @@ func (m ReverseInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.input.Focus()
 
 	case tea.KeyMsg:
+		if m.quitting {
+			switch msg.String() {
+			case "y":
+				return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: "Reverse Review: esc で中断"} }
+			case "n", "esc":
+				m.quitting = false
+			}
+			return m, nil
+		}
 		return m.handleKey(msg)
 	}
 
@@ -152,7 +162,8 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Batch(m.rateCard(rating), tick)
 		case "esc":
-			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+			m.quitting = true
+			return m, nil
 		default:
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
@@ -167,7 +178,11 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.onComplete != nil {
 				return m, m.onComplete
 			}
-			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+			reason := ""
+			if m.state == reverseInputEmpty {
+				reason = "Reverse review skipped: no cards available"
+			}
+			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: reason} }
 		}
 	}
 	return m, nil
@@ -194,6 +209,13 @@ func (m ReverseInputModel) View() string {
 
 	b.WriteString(titleStyle.Render("Reverse Review"))
 	b.WriteString("\n\n")
+
+	if m.quitting {
+		b.WriteString(labelStyle.Render("Reverse Review を中断しますか？"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("%s  %s", keyStyle.Render("[y] 中断"), keyStyle.Render("[n] 続ける")))
+		return b.String()
+	}
 
 	switch m.state {
 	case reverseInputLoading:

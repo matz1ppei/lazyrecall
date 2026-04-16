@@ -43,6 +43,7 @@ type SessionModel struct {
 	db                *sql.DB
 	ai                ai.Client
 	phase             sessionPhase
+	quitting          bool // true when esc confirmation dialog is shown
 	cards             []db.CardWithReview
 	preview           PreviewModel
 	review            ReviewModel
@@ -98,6 +99,32 @@ func (m SessionModel) Init() tea.Cmd {
 func phaseCompleteCmd() tea.Msg { return msgSessionPhaseComplete{} }
 
 func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// esc 確認ダイアログ中は y/n のみ受け付ける
+	if m.quitting {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "y":
+				return m, func() tea.Msg {
+					return MsgGotoScreen{Target: screenHome, Reason: "セッションを中断しました"}
+				}
+			case "n", "esc":
+				m.quitting = false
+			}
+		}
+		return m, nil
+	}
+
+	// アクティブなフェーズ中の esc はセッションレベルで先にキャッチ
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "esc" {
+		switch m.phase {
+		case sessionPhasePreview, sessionPhaseReview, sessionPhaseBrainDump1,
+			sessionPhaseMatch, sessionPhaseReverseReview, sessionPhaseBrainDump2,
+			sessionPhaseBlank, sessionPhaseBrainDump3:
+			m.quitting = true
+			return m, nil
+		}
+	}
+
 	switch msg := msg.(type) {
 	case msgSessionReady:
 		if len(msg.cards) == 0 {
@@ -159,7 +186,9 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionPhaseDone:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			if key.String() == "enter" || key.String() == "esc" || key.String() == " " {
-				return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+				return m, func() tea.Msg {
+					return MsgGotoScreen{Target: screenHome, Reason: "Session completed"}
+				}
 			}
 		}
 	}
@@ -323,6 +352,16 @@ func extractCards(cwrs []db.CardWithReview) []db.Card {
 }
 
 func (m SessionModel) View() string {
+	if m.quitting {
+		var b strings.Builder
+		b.WriteString(titleStyle.Render("Daily Session"))
+		b.WriteString("\n\n")
+		b.WriteString(labelStyle.Render("セッションを中断しますか？"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("%s  %s", keyStyle.Render("[y] 中断"), keyStyle.Render("[n] 続ける")))
+		return b.String()
+	}
+
 	switch m.phase {
 	case sessionPhaseLoading:
 		return titleStyle.Render("Daily Session") + "\n\n" + subtitleStyle.Render("Loading cards...")
