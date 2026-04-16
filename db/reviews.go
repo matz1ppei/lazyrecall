@@ -57,7 +57,7 @@ func GetOrCreateReview(db *sql.DB, cardID int64) (Review, error) {
 		return Review{
 			ID:         id,
 			CardID:     cardID,
-			DueDate:    time.Now().UTC().Format("2006-01-02"),
+			DueDate:    time.Now().Format("2006-01-02"),
 			Interval:   1,
 			EaseFactor: 2.5,
 		}, nil
@@ -85,17 +85,17 @@ func GetOrCreateReview(db *sql.DB, cardID int64) (Review, error) {
 func parseDatetime(s string) time.Time {
 	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05Z", time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
-			return t.UTC()
+			return t
 		}
 	}
 	return time.Time{}
 }
 
 func UpdateReview(db *sql.DB, r Review) error {
-	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	now := time.Now().Format("2006-01-02 15:04:05")
 	var lastReviewStr *string
 	if r.LastReview != nil {
-		s := r.LastReview.UTC().Format("2006-01-02 15:04:05")
+		s := r.LastReview.Format("2006-01-02 15:04:05")
 		lastReviewStr = &s
 	}
 	_, err := db.Exec(
@@ -172,12 +172,12 @@ func ListAllCardsWithReview(db *sql.DB) ([]CardWithReview, error) {
 
 func CountDueCards(db *sql.DB) (int, error) {
 	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE due_date <= date('now')`).Scan(&n)
+	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE due_date <= date('now', 'localtime')`).Scan(&n)
 	return n, err
 }
 
 func SetDueToday(db *sql.DB, cardIDs []int64) error {
-	today := time.Now().UTC().Format("2006-01-02")
+	today := time.Now().Format("2006-01-02")
 	for _, id := range cardIDs {
 		if _, err := db.Exec(`UPDATE reviews SET due_date = ? WHERE card_id = ?`, today, id); err != nil {
 			return err
@@ -188,7 +188,7 @@ func SetDueToday(db *sql.DB, cardIDs []int64) error {
 
 func CountOverdueCards(db *sql.DB) (int, error) {
 	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE due_date < date('now')`).Scan(&n)
+	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE due_date < date('now', 'localtime')`).Scan(&n)
 	return n, err
 }
 
@@ -225,7 +225,7 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN last_rating = 4 THEN 1 ELSE 0 END), 0)
 		FROM reviews
-		WHERE date(reviewed_at) = date('now')
+		WHERE date(reviewed_at) = date('now', 'localtime')
 	`).Scan(&s.ReviewedToday, &s.CorrectToday)
 	if err != nil {
 		return s, err
@@ -261,8 +261,8 @@ func calcStreak(dates []string) int {
 	if len(dates) == 0 {
 		return 0
 	}
-	today := time.Now().UTC().Format("2006-01-02")
-	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
 
 	// streak must include today or yesterday to be active
 	if dates[0] != today && dates[0] != yesterday {
@@ -284,7 +284,7 @@ func calcStreak(dates []string) int {
 
 func CountReviewedToday(db *sql.DB) (int, error) {
 	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE date(reviewed_at) = date('now')`).Scan(&n)
+	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE date(reviewed_at) = date('now', 'localtime')`).Scan(&n)
 	return n, err
 }
 
@@ -295,7 +295,7 @@ func ListDueCards(db *sql.DB, limit int) ([]CardWithReview, error) {
 		        r.stability, r.difficulty, r.fsrs_state, r.lapses, r.last_review
 		 FROM cards c
 		 JOIN reviews r ON r.card_id = c.id
-		 WHERE r.due_date <= date('now')
+		 WHERE r.due_date <= date('now', 'localtime')
 		 ORDER BY r.due_date, c.id
 		 LIMIT ?`,
 		limit,

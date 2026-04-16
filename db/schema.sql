@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS daily_sessions (
 CREATE TABLE IF NOT EXISTS reviews (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     card_id      INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-    due_date     DATE    NOT NULL DEFAULT (date('now')),
+    due_date     DATE    NOT NULL DEFAULT (date('now', 'localtime')),
     interval     INTEGER NOT NULL DEFAULT 1,
     ease_factor  REAL    NOT NULL DEFAULT 2.5,
     repetitions  INTEGER NOT NULL DEFAULT 0,

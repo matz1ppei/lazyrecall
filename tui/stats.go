@@ -123,7 +123,7 @@ func (m StatsModel) View() string {
 // 最新週が一番下、今日が右下端になるよう配置する。
 func renderCalendar(dates map[string]bool) string {
 	var b strings.Builder
-	today := time.Now().UTC()
+	today := time.Now()
 	todayStr := today.Format("2006-01-02")
 
 	// 今週の日曜を起点に4週前の日曜を算出
