@@ -8,7 +8,6 @@ package tui
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
 	"github.com/ippei/lazyrecall/db"
-	"github.com/ippei/lazyrecall/srs"
 )
 
 type reverseInputState int
@@ -179,22 +177,6 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
-}
-
-func (m ReverseInputModel) rateCard(rating int) tea.Cmd {
-	card := m.cards[m.index]
-	database := m.db
-	return func() tea.Msg {
-		current := db.ReviewToSRS(card.Review)
-		result := srs.Schedule(current, srs.RatingFromSM2(rating), time.Now())
-		updated := card.Review
-		db.ApplySRSResult(&updated, result)
-		updated.LastRating = &rating
-		if err := db.UpdateReview(database, updated); err != nil {
-			log.Printf("UpdateReview error: %v", err)
-		}
-		return nil
-	}
 }
 
 func (m ReverseInputModel) View() string {

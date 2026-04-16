@@ -3,7 +3,6 @@ package tui
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 	"time"
@@ -11,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
-	"github.com/ippei/lazyrecall/srs"
 )
 
 type reviewState int
@@ -257,22 +255,6 @@ func (m ReviewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
-}
-
-func (m ReviewModel) rateCard(rating int) tea.Cmd {
-	card := m.cards[m.index]
-	database := m.db
-	return func() tea.Msg {
-		current := db.ReviewToSRS(card.Review)
-		result := srs.Schedule(current, srs.RatingFromSM2(rating), time.Now())
-		updated := card.Review
-		db.ApplySRSResult(&updated, result)
-		updated.LastRating = &rating
-		if err := db.UpdateReview(database, updated); err != nil {
-			log.Printf("UpdateReview error: %v", err)
-		}
-		return nil
-	}
 }
 
 func (m ReviewModel) View() string {
