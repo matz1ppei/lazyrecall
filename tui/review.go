@@ -250,14 +250,7 @@ func (m ReviewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				delay = 1500 * time.Millisecond
 			}
 			tick := tea.Tick(delay, func(time.Time) tea.Msg { return msgReviewResultReset{} })
-			if m.sessionMode {
-				return m, tick
-			}
-			rating := 0
-			if m.lastCorrect {
-				rating = 4
-			}
-			return m, tea.Batch(m.rateCard(rating), tick)
+			return m, tick
 		case "esc", "q":
 			m.quitting = true
 			return m, nil

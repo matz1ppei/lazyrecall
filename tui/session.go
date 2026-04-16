@@ -329,6 +329,8 @@ func markAgain(database *sql.DB, cardID int64) {
 	}
 	result := srs.Schedule(db.ReviewToSRS(r), srs.RatingAgain, time.Now())
 	db.ApplySRSResult(&r, result)
+	rating := 0
+	r.LastRating = &rating
 	db.UpdateReview(database, r)
 }
 
@@ -340,6 +342,8 @@ func markGood(database *sql.DB, cardID int64) {
 	}
 	result := srs.Schedule(db.ReviewToSRS(r), srs.RatingGood, time.Now())
 	db.ApplySRSResult(&r, result)
+	rating := 4
+	r.LastRating = &rating
 	db.UpdateReview(database, r)
 }
 

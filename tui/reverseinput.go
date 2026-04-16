@@ -153,14 +153,7 @@ func (m ReverseInputModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			tick := tea.Tick(delay, func(time.Time) tea.Msg {
 				return msgReverseInputResultReset{}
 			})
-			if m.sessionMode {
-				return m, tick
-			}
-			rating := 0
-			if m.lastCorrect {
-				rating = 4
-			}
-			return m, tea.Batch(m.rateCard(rating), tick)
+			return m, tick
 		case "esc":
 			m.quitting = true
 			return m, nil
