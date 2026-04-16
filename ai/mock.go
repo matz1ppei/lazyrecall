@@ -21,8 +21,8 @@ func (m *MockClient) GenerateHint(_ context.Context, _, _ string) (string, error
 	return m.HintResult, m.HintErr
 }
 
-func (m *MockClient) GenerateExample(_ context.Context, _, _ string) (string, string, error) {
-	return m.ExampleResult, m.ExampleTranslationResult, m.ExampleErr
+func (m *MockClient) GenerateExample(_ context.Context, _, _ string) (string, string, string, error) {
+	return m.ExampleResult, m.ExampleTranslationResult, "", m.ExampleErr
 }
 
 func (m *MockClient) GenerateExampleTranslation(_ context.Context, _, _, _ string) (string, error) {

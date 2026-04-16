@@ -94,23 +94,24 @@ func (c *OllamaClient) GenerateHint(ctx context.Context, front, back string) (st
 	return c.chat(ctx, prompt)
 }
 
-func (c *OllamaClient) GenerateExample(ctx context.Context, front, back string) (example, translation string, err error) {
+func (c *OllamaClient) GenerateExample(ctx context.Context, front, back string) (example, translation, exampleWord string, err error) {
 	prompt := fmt.Sprintf(
-		"word: %s\nmeaning: %s\nGenerate one natural example sentence using this word, and its English translation.\nReturn a JSON object: {\"example\": \"...\", \"translation\": \"...\"}",
+		"word: %s\nmeaning: %s\nGenerate one natural example sentence using this word (the exact form used may be conjugated), its English translation, and the exact word form as it appears in the sentence.\nReturn a JSON object: {\"example\": \"...\", \"translation\": \"...\", \"example_word\": \"...\"}",
 		front, back,
 	)
 	raw, err := c.chatJSON(ctx, prompt)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	var result struct {
 		Example     string `json:"example"`
 		Translation string `json:"translation"`
+		ExampleWord string `json:"example_word"`
 	}
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return "", "", fmt.Errorf("ollama: parse example JSON: %w (raw: %.200s)", err, raw)
+		return "", "", "", fmt.Errorf("ollama: parse example JSON: %w (raw: %.200s)", err, raw)
 	}
-	return result.Example, result.Translation, nil
+	return result.Example, result.Translation, result.ExampleWord, nil
 }
 
 func (c *OllamaClient) GenerateExampleTranslation(ctx context.Context, front, back, example string) (string, error) {
@@ -127,6 +128,7 @@ type generatedCard struct {
 	Hint               string `json:"hint"`
 	Example            string `json:"example"`
 	ExampleTranslation string `json:"example_translation"`
+	ExampleWord        string `json:"example_word"`
 }
 
 func (c *OllamaClient) GenerateCard(ctx context.Context, topic string) (string, string, string, error) {
@@ -140,7 +142,7 @@ func (c *OllamaClient) GenerateCard(ctx context.Context, topic string) (string, 
 func (c *OllamaClient) GenerateCards(ctx context.Context, topic string, rankStart, rankEnd int) ([]GeneratedCard, error) {
 	count := rankEnd - rankStart + 1
 	prompt := fmt.Sprintf(
-		"Generate %d flashcard(s) about: %s. These should be the most common words ranked #%d to #%d by frequency. Return ONLY a JSON array: [{\"front\": ..., \"back\": ..., \"hint\": ..., \"example\": \"example sentence using the word\"}, ...].",
+		"Generate %d flashcard(s) about: %s. These should be the most common words ranked #%d to #%d by frequency. Return ONLY a JSON array: [{\"front\": ..., \"back\": ..., \"hint\": ..., \"example\": \"example sentence using the word\", \"example_word\": \"exact word form used in the sentence\"}, ...].",
 		count, topic, rankStart, rankEnd,
 	)
 	raw, err := c.chat(ctx, prompt)
@@ -157,7 +159,7 @@ func (c *OllamaClient) GenerateCards(ctx context.Context, topic string, rankStar
 	}
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {
-		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}
+		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation, ExampleWord: c.ExampleWord}
 	}
 	return result, nil
 }
@@ -196,9 +198,8 @@ func (c *OllamaClient) GenerateWordList(ctx context.Context, topic string, rankS
 func (c *OllamaClient) GenerateCardsForWords(ctx context.Context, topic string, words []string) ([]GeneratedCard, error) {
 	wordsJSON, _ := json.Marshal(words)
 	prompt := fmt.Sprintf(
-		`For each %s word listed, generate: "back" (English translation/meaning), "hint" (short memory mnemonic), "example" (one natural example sentence that contains the word in its exact listed form), "example_translation" (English translation of the example sentence). `+
-			`Important: the example sentence must use the word exactly as listed — do not conjugate or inflect it. `+
-			`Words: %s. Return a JSON object: {"items": [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<English translation of example>"}, ...]}`,
+		`For each %s word listed, generate: "back" (English translation/meaning), "hint" (short memory mnemonic), "example" (one natural example sentence using the word), "example_translation" (English translation of the example sentence), "example_word" (the exact word form as it appears in the sentence — may be conjugated or inflected). `+
+			`Words: %s. Return a JSON object: {"items": [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<English translation of example>", "example_word": "<exact form in sentence>"}, ...]}`,
 		topic, string(wordsJSON),
 	)
 	raw, err := c.chatJSON(ctx, prompt)
@@ -220,7 +221,7 @@ func (c *OllamaClient) GenerateCardsForWords(ctx context.Context, topic string, 
 	}
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {
-		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}
+		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation, ExampleWord: c.ExampleWord}
 	}
 	return result, nil
 }
@@ -228,8 +229,8 @@ func (c *OllamaClient) GenerateCardsForWords(ctx context.Context, topic string, 
 func (c *OllamaClient) GenerateCardsFromWords(ctx context.Context, words []WordPair) ([]GeneratedCard, error) {
 	wordsJSON, _ := json.Marshal(words)
 	prompt := fmt.Sprintf(
-		`For each word pair, add a short memory hint, one natural example sentence, and an English translation of that example sentence. Words: %s. `+
-			`Return a JSON object: {"items": [{"front": ..., "back": ..., "hint": "short mnemonic", "example": "example sentence", "example_translation": "English translation of example"}, ...]}`,
+		`For each word pair, add a short memory hint, one natural example sentence, an English translation of that example sentence, and the exact word form as it appears in the sentence. Words: %s. `+
+			`Return a JSON object: {"items": [{"front": ..., "back": ..., "hint": "short mnemonic", "example": "example sentence", "example_translation": "English translation of example", "example_word": "exact word form in sentence"}, ...]}`,
 		string(wordsJSON),
 	)
 	raw, err := c.chatJSON(ctx, prompt)
@@ -244,7 +245,7 @@ func (c *OllamaClient) GenerateCardsFromWords(ctx context.Context, words []WordP
 	}
 	result := make([]GeneratedCard, len(wrapper.Items))
 	for i, c := range wrapper.Items {
-		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}
+		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation, ExampleWord: c.ExampleWord}
 	}
 	return result, nil
 }

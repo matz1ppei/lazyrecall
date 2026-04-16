@@ -26,8 +26,11 @@ const (
 )
 
 // MsgGotoScreen is sent by sub-models to request a screen transition.
+// Reason is an optional human-readable explanation shown on the home screen
+// to help diagnose unexpected transitions (e.g. "no cards with translations").
 type MsgGotoScreen struct {
 	Target screen
+	Reason string
 }
 
 type App struct {
@@ -79,6 +82,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.cfg = cfg
 			}
 			a.home = NewHomeModel(a.db, a.ai, a.cfg)
+			if msg.Reason != "" {
+				a.home.statusMsg = msg.Reason
+			}
 			return a, a.home.Init()
 		case screenAdd:
 			a.add = NewAddModel(a.db, a.ai)

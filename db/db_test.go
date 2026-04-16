@@ -20,7 +20,7 @@ func openTestDB(t *testing.T) *sql.DB {
 func TestCreateGetCard(t *testing.T) {
 	db := openTestDB(t)
 
-	id, err := CreateCard(db, "front1", "back1", "hint1", "", "")
+	id, err := CreateCard(db, "front1", "back1", "hint1", "", "", "")
 	if err != nil {
 		t.Fatalf("CreateCard: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestListCards(t *testing.T) {
 	db := openTestDB(t)
 
 	for i := 0; i < 3; i++ {
-		if _, err := CreateCard(db, "front", "back", "", "", ""); err != nil {
+		if _, err := CreateCard(db, "front", "back", "", "", "", ""); err != nil {
 			t.Fatalf("CreateCard: %v", err)
 		}
 	}
@@ -69,7 +69,7 @@ func TestCountCards(t *testing.T) {
 
 	// Insert 3 cards and verify count.
 	for i := 0; i < 3; i++ {
-		if _, err := CreateCard(database, fmt.Sprintf("f%d", i), "back", "", "", ""); err != nil {
+		if _, err := CreateCard(database, fmt.Sprintf("f%d", i), "back", "", "", "", ""); err != nil {
 			t.Fatalf("CreateCard: %v", err)
 		}
 	}
@@ -85,7 +85,7 @@ func TestCountCards(t *testing.T) {
 func TestDeleteCard(t *testing.T) {
 	db := openTestDB(t)
 
-	id, _ := CreateCard(db, "front", "back", "", "", "")
+	id, _ := CreateCard(db, "front", "back", "", "", "", "")
 	if err := DeleteCard(db, id); err != nil {
 		t.Fatalf("DeleteCard: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestDeleteCard(t *testing.T) {
 func TestGetOrCreateReviewIdempotent(t *testing.T) {
 	db := openTestDB(t)
 
-	id, _ := CreateCard(db, "front", "back", "", "", "")
+	id, _ := CreateCard(db, "front", "back", "", "", "", "")
 
 	r1, err := GetOrCreateReview(db, id)
 	if err != nil {
@@ -127,7 +127,7 @@ func TestListRandomCards(t *testing.T) {
 	t.Run("fewer cards than requested returns all", func(t *testing.T) {
 		d := openTestDB(t)
 		for i := 0; i < 2; i++ {
-			if _, err := CreateCard(d, fmt.Sprintf("f%d", i), "b", "", "", ""); err != nil {
+			if _, err := CreateCard(d, fmt.Sprintf("f%d", i), "b", "", "", "", ""); err != nil {
 				t.Fatalf("CreateCard: %v", err)
 			}
 		}
@@ -143,7 +143,7 @@ func TestListRandomCards(t *testing.T) {
 	t.Run("more cards than requested returns exactly n", func(t *testing.T) {
 		d := openTestDB(t)
 		for i := 0; i < 10; i++ {
-			if _, err := CreateCard(d, fmt.Sprintf("f%d", i), "b", "", "", ""); err != nil {
+			if _, err := CreateCard(d, fmt.Sprintf("f%d", i), "b", "", "", "", ""); err != nil {
 				t.Fatalf("CreateCard: %v", err)
 			}
 		}
@@ -161,11 +161,11 @@ func TestListDueCards(t *testing.T) {
 	db := openTestDB(t)
 
 	// Card due today (default due_date = date('now'))
-	id1, _ := CreateCard(db, "due", "back", "", "", "")
+	id1, _ := CreateCard(db, "due", "back", "", "", "", "")
 	_, _ = GetOrCreateReview(db, id1)
 
 	// Card due tomorrow — update due_date to future
-	id2, _ := CreateCard(db, "future", "back", "", "", "")
+	id2, _ := CreateCard(db, "future", "back", "", "", "", "")
 	r2, _ := GetOrCreateReview(db, id2)
 	r2.DueDate = time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 	if err := UpdateReview(db, r2); err != nil {
@@ -187,7 +187,7 @@ func TestListDueCards(t *testing.T) {
 func TestCreateCardWithTranslation(t *testing.T) {
 	db := openTestDB(t)
 
-	id, err := CreateCard(db, "hola", "hello", "", "Hola mundo.", "Hello world.")
+	id, err := CreateCard(db, "hola", "hello", "", "Hola mundo.", "Hello world.", "")
 	if err != nil {
 		t.Fatalf("CreateCard: %v", err)
 	}
@@ -207,9 +207,9 @@ func TestCreateCardWithTranslation(t *testing.T) {
 func TestListCardsWithTranslation(t *testing.T) {
 	db := openTestDB(t)
 
-	CreateCard(db, "hola", "hello", "", "Hola mundo.", "Hello world.")
-	CreateCard(db, "perro", "dog", "", "El perro corre.", "")
-	CreateCard(db, "gato", "cat", "", "", "")
+	CreateCard(db, "hola", "hello", "", "Hola mundo.", "Hello world.", "")
+	CreateCard(db, "perro", "dog", "", "El perro corre.", "", "")
+	CreateCard(db, "gato", "cat", "", "", "", "")
 
 	cards, err := ListCardsWithTranslation(db)
 	if err != nil {
@@ -226,9 +226,9 @@ func TestListCardsWithTranslation(t *testing.T) {
 func TestListCardsNeedingTranslation(t *testing.T) {
 	db := openTestDB(t)
 
-	CreateCard(db, "hola", "hello", "", "Hola mundo.", "Hello world.")
-	CreateCard(db, "perro", "dog", "", "El perro corre.", "")
-	CreateCard(db, "gato", "cat", "", "", "")
+	CreateCard(db, "hola", "hello", "", "Hola mundo.", "Hello world.", "")
+	CreateCard(db, "perro", "dog", "", "El perro corre.", "", "")
+	CreateCard(db, "gato", "cat", "", "", "", "")
 
 	cards, err := ListCardsNeedingTranslation(db)
 	if err != nil {
@@ -245,7 +245,7 @@ func TestListCardsNeedingTranslation(t *testing.T) {
 func TestUpdateCardTranslation(t *testing.T) {
 	db := openTestDB(t)
 
-	id, _ := CreateCard(db, "perro", "dog", "", "El perro corre.", "")
+	id, _ := CreateCard(db, "perro", "dog", "", "El perro corre.", "", "")
 	if err := UpdateCardTranslation(db, id, "The dog runs."); err != nil {
 		t.Fatalf("UpdateCardTranslation: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestMarkReverseDone(t *testing.T) {
 func TestUpdateReviewWithFSRSFields(t *testing.T) {
 	db := openTestDB(t)
 
-	id, _ := CreateCard(db, "front", "back", "", "", "")
+	id, _ := CreateCard(db, "front", "back", "", "", "", "")
 	r, err := GetOrCreateReview(db, id)
 	if err != nil {
 		t.Fatalf("GetOrCreateReview: %v", err)
@@ -375,7 +375,7 @@ func TestUpdateReviewWithFSRSFields(t *testing.T) {
 func TestGetOrCreateReviewFSRSDefaults(t *testing.T) {
 	db := openTestDB(t)
 
-	id, _ := CreateCard(db, "front", "back", "", "", "")
+	id, _ := CreateCard(db, "front", "back", "", "", "", "")
 	r, err := GetOrCreateReview(db, id)
 	if err != nil {
 		t.Fatalf("GetOrCreateReview: %v", err)
@@ -400,7 +400,7 @@ func TestGetOrCreateReviewFSRSDefaults(t *testing.T) {
 func TestListDueCardsCarriesFSRSFields(t *testing.T) {
 	db := openTestDB(t)
 
-	id, _ := CreateCard(db, "front", "back", "", "", "")
+	id, _ := CreateCard(db, "front", "back", "", "", "", "")
 	r, _ := GetOrCreateReview(db, id)
 
 	now := time.Now().UTC().Truncate(time.Second)

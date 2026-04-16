@@ -13,6 +13,7 @@ type Card struct {
 	Hint               string
 	Example            string
 	ExampleTranslation string
+	ExampleWord        string
 	CreatedAt          time.Time
 }
 
@@ -24,10 +25,10 @@ func CountCards(database *sql.DB) (int, error) {
 	return count, err
 }
 
-func CreateCard(db *sql.DB, front, back, hint, example, exampleTranslation string) (int64, error) {
+func CreateCard(db *sql.DB, front, back, hint, example, exampleTranslation, exampleWord string) (int64, error) {
 	res, err := db.Exec(
-		`INSERT INTO cards (front, back, hint, example, example_translation) VALUES (?, ?, ?, ?, ?)`,
-		front, back, hint, example, exampleTranslation,
+		`INSERT INTO cards (front, back, hint, example, example_translation, example_word) VALUES (?, ?, ?, ?, ?, ?)`,
+		front, back, hint, example, exampleTranslation, exampleWord,
 	)
 	if err != nil {
 		return 0, err
@@ -37,11 +38,11 @@ func CreateCard(db *sql.DB, front, back, hint, example, exampleTranslation strin
 
 func GetCard(db *sql.DB, id int64) (Card, error) {
 	row := db.QueryRow(
-		`SELECT id, front, back, hint, example, example_translation, created_at FROM cards WHERE id = ?`, id,
+		`SELECT id, front, back, hint, example, example_translation, example_word, created_at FROM cards WHERE id = ?`, id,
 	)
 	var c Card
 	var createdAt string
-	if err := row.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &createdAt); err != nil {
+	if err := row.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 		return Card{}, err
 	}
 	c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
@@ -50,7 +51,7 @@ func GetCard(db *sql.DB, id int64) (Card, error) {
 
 func ListCards(db *sql.DB) ([]Card, error) {
 	rows, err := db.Query(
-		`SELECT id, front, back, hint, example, example_translation, created_at FROM cards ORDER BY id`,
+		`SELECT id, front, back, hint, example, example_translation, example_word, created_at FROM cards ORDER BY id`,
 	)
 	if err != nil {
 		return nil, err
@@ -61,7 +62,7 @@ func ListCards(db *sql.DB) ([]Card, error) {
 	for rows.Next() {
 		var c Card
 		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &createdAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
@@ -72,7 +73,7 @@ func ListCards(db *sql.DB) ([]Card, error) {
 
 func FindCardsByFront(db *sql.DB, front string) ([]Card, error) {
 	rows, err := db.Query(
-		`SELECT id, front, back, hint, example, example_translation, created_at FROM cards WHERE LOWER(front) = LOWER(?)`,
+		`SELECT id, front, back, hint, example, example_translation, example_word, created_at FROM cards WHERE LOWER(front) = LOWER(?)`,
 		front,
 	)
 	if err != nil {
@@ -84,7 +85,7 @@ func FindCardsByFront(db *sql.DB, front string) ([]Card, error) {
 	for rows.Next() {
 		var c Card
 		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &createdAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
@@ -109,10 +110,10 @@ func DeduplicateCards(db *sql.DB) (int, error) {
 	return int(n), err
 }
 
-func UpdateCard(db *sql.DB, id int64, front, back, hint, example, exampleTranslation string) error {
+func UpdateCard(db *sql.DB, id int64, front, back, hint, example, exampleTranslation, exampleWord string) error {
 	_, err := db.Exec(
-		`UPDATE cards SET front=?, back=?, hint=?, example=?, example_translation=? WHERE id=?`,
-		front, back, hint, example, exampleTranslation, id,
+		`UPDATE cards SET front=?, back=?, hint=?, example=?, example_translation=?, example_word=? WHERE id=?`,
+		front, back, hint, example, exampleTranslation, exampleWord, id,
 	)
 	return err
 }
@@ -146,7 +147,7 @@ func GetRecentFronts(database *sql.DB, limit int) ([]string, error) {
 // If fewer than n cards exist, all are returned.
 func ListRandomCards(database *sql.DB, n int) ([]Card, error) {
 	rows, err := database.Query(
-		`SELECT id, front, back, hint, example, example_translation, created_at FROM cards ORDER BY RANDOM() LIMIT ?`, n,
+		`SELECT id, front, back, hint, example, example_translation, example_word, created_at FROM cards ORDER BY RANDOM() LIMIT ?`, n,
 	)
 	if err != nil {
 		return nil, err
@@ -157,7 +158,7 @@ func ListRandomCards(database *sql.DB, n int) ([]Card, error) {
 	for rows.Next() {
 		var c Card
 		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &createdAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
@@ -198,7 +199,7 @@ func ListRandomCardsExcluding(database *sql.DB, n int, excludeIDs []int64) ([]Ca
 		args[i] = id
 	}
 	args[len(excludeIDs)] = n
-	query := `SELECT id, front, back, hint, example, example_translation, created_at FROM cards WHERE id NOT IN (` +
+	query := `SELECT id, front, back, hint, example, example_translation, example_word, created_at FROM cards WHERE id NOT IN (` +
 		strings.Join(placeholders, ",") + `) ORDER BY RANDOM() LIMIT ?`
 	rows, err := database.Query(query, args...)
 	if err != nil {
@@ -209,7 +210,7 @@ func ListRandomCardsExcluding(database *sql.DB, n int, excludeIDs []int64) ([]Ca
 	for rows.Next() {
 		var c Card
 		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &createdAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
@@ -249,7 +250,7 @@ func SelectSessionCards(database *sql.DB, limit int) ([]CardWithReview, error) {
 // ListCardsWithTranslation returns cards that have both example and example_translation set, in random order.
 func ListCardsWithTranslation(database *sql.DB) ([]Card, error) {
 	rows, err := database.Query(
-		`SELECT id, front, back, hint, example, example_translation, created_at
+		`SELECT id, front, back, hint, example, example_translation, example_word, created_at
 		 FROM cards
 		 WHERE example != '' AND example_translation != ''
 		 ORDER BY RANDOM()`,
@@ -263,7 +264,7 @@ func ListCardsWithTranslation(database *sql.DB) ([]Card, error) {
 	for rows.Next() {
 		var c Card
 		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &createdAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
@@ -275,7 +276,7 @@ func ListCardsWithTranslation(database *sql.DB) ([]Card, error) {
 // ListCardsNeedingTranslation returns cards with example but no example_translation, ordered by id.
 func ListCardsNeedingTranslation(database *sql.DB) ([]Card, error) {
 	rows, err := database.Query(
-		`SELECT id, front, back, hint, example, example_translation, created_at
+		`SELECT id, front, back, hint, example, example_translation, example_word, created_at
 		 FROM cards
 		 WHERE example != '' AND example_translation = ''
 		 ORDER BY id`,
@@ -289,7 +290,7 @@ func ListCardsNeedingTranslation(database *sql.DB) ([]Card, error) {
 	for rows.Next() {
 		var c Card
 		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &createdAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
 		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)

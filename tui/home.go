@@ -71,6 +71,7 @@ type HomeModel struct {
 	session       db.DailySession
 	importInput   textinput.Model
 	importMsg     string
+	statusMsg     string // shown when navigating back from a session phase unexpectedly
 	// configure state
 	cfgLangInput  textinput.Model
 	cfgCountInput textinput.Model
@@ -628,6 +629,9 @@ func (h HomeModel) View() string {
 
 	if h.importMsg != "" {
 		b.WriteString("\n" + h.importMsg)
+	}
+	if h.statusMsg != "" {
+		b.WriteString("\n" + subtitleStyle.Render("← "+h.statusMsg))
 	}
 
 	return b.String()

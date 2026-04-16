@@ -92,13 +92,28 @@ func (m BlankModel) Init() tea.Cmd {
 	}
 }
 
-// canBlank returns true when the card's front word appears (in any case) in the
-// example sentence as a whole word. Cards where the AI used a conjugated form
-// that doesn't match the base form are excluded from Blank Fill to avoid
-// showing an un-blanked sentence.
+// canBlank returns true when the card has enough data to show a fill-in-the-blank
+// exercise. If example_word is set, it is used as the blank target (allows
+// conjugated forms). Otherwise falls back to checking that the base form (front)
+// appears in the example as a whole word.
 func canBlank(c db.Card) bool {
-	return c.Example != "" && c.ExampleTranslation != "" &&
-		blankSentence(c.Example, c.Front) != c.Example
+	if c.Example == "" || c.ExampleTranslation == "" {
+		return false
+	}
+	word := c.Front
+	if c.ExampleWord != "" {
+		word = c.ExampleWord
+	}
+	return blankSentence(c.Example, word) != c.Example
+}
+
+// blankWord returns the word to blank out in the example sentence.
+// Uses example_word (conjugated form) if available, falls back to front.
+func blankWord(c db.Card) string {
+	if c.ExampleWord != "" {
+		return c.ExampleWord
+	}
+	return c.Front
 }
 
 func (m BlankModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -145,7 +160,9 @@ func (m BlankModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.onComplete != nil {
 				return m, m.onComplete
 			}
-			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+			return m, func() tea.Msg {
+				return MsgGotoScreen{Target: screenHome, Reason: "Blank fill skipped: no cards with example sentences and translations"}
+			}
 		}
 
 	case blankStatePlaying:
@@ -159,7 +176,7 @@ func (m BlankModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			answer := strings.TrimSpace(m.input.Value())
 			card := m.cards[m.current]
 			m.lastAnswer = answer
-			m.lastCorrect = ai.MatchAnswer(answer, card.Front)
+			m.lastCorrect = ai.MatchAnswer(answer, blankWord(card))
 			if m.lastCorrect {
 				m.correct++
 				m.correctIDs = append(m.correctIDs, card.ID)
@@ -225,7 +242,7 @@ func (m BlankModel) View() string {
 		card := m.cards[m.current]
 		b.WriteString(labelStyle.Render(fmt.Sprintf("%d / %d", m.current+1, len(m.cards))))
 		b.WriteString("\n\n")
-		b.WriteString(subtitleStyle.Render(blankSentence(card.Example, card.Front)))
+		b.WriteString(subtitleStyle.Render(blankSentence(card.Example, blankWord(card))))
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render(card.ExampleTranslation))
 		b.WriteString("\n\n")
@@ -245,11 +262,11 @@ func (m BlankModel) View() string {
 		b.WriteString(subtitleStyle.Render(card.Example))
 		b.WriteString("\n\n")
 		if m.lastCorrect {
-			b.WriteString(successStyle.Render("✓ " + card.Front))
+			b.WriteString(successStyle.Render("✓ " + blankWord(card)))
 		} else {
 			b.WriteString(errorStyle.Render("✗ " + m.lastAnswer))
 			b.WriteString(" → ")
-			b.WriteString(successStyle.Render(card.Front))
+			b.WriteString(successStyle.Render(blankWord(card)))
 		}
 
 	case blankStateComplete:

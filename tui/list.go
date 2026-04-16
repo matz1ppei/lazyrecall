@@ -279,7 +279,7 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				focus := m.editFocus
 				return m, func() tea.Msg {
 					if focus == 3 {
-						example, translation, err := aiClient.GenerateExample(context.Background(), front, back)
+						example, translation, _, err := aiClient.GenerateExample(context.Background(), front, back)
 						return msgEditGenerated{text: example, translation: translation, err: err}
 					}
 					text, err := aiClient.GenerateHint(context.Background(), front, back)
@@ -308,7 +308,7 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			editTranslation := m.editTranslation
 			m.state = listStateLoading
 			return m, func() tea.Msg {
-				err := db.UpdateCard(database, id, front, back, hint, example, editTranslation)
+				err := db.UpdateCard(database, id, front, back, hint, example, editTranslation, "")
 				return msgUpdateDone{err: err}
 			}
 		default:

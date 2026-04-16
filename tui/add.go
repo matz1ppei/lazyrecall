@@ -25,6 +25,7 @@ const (
 type msgHintGenerated struct {
 	hint        string
 	translation string // set when hint is an example sentence
+	exampleWord string // exact word form used in the example sentence
 	err         error
 }
 
@@ -38,6 +39,7 @@ type AddModel struct {
 	step               addStep
 	inputs             [4]textinput.Model // front, back, hint, example
 	exampleTranslation string
+	exampleWord        string
 	status             string
 	loading            bool
 	dupWarning         bool
@@ -77,6 +79,9 @@ func (m AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputs[int(m.step)].SetValue(msg.hint)
 			if msg.translation != "" {
 				m.exampleTranslation = msg.translation
+			}
+			if msg.exampleWord != "" {
+				m.exampleWord = msg.exampleWord
 			}
 			m.status = successStyle.Render("Generated!")
 		}
@@ -194,8 +199,8 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			step := m.step
 			return m, func() tea.Msg {
 				if step == stepExample {
-					example, translation, err := aiClient.GenerateExample(context.Background(), front, back)
-					return msgHintGenerated{hint: example, translation: translation, err: err}
+					example, translation, exampleWord, err := aiClient.GenerateExample(context.Background(), front, back)
+					return msgHintGenerated{hint: example, translation: translation, exampleWord: exampleWord, err: err}
 				}
 				hint, err := aiClient.GenerateHint(context.Background(), front, back)
 				return msgHintGenerated{hint: hint, err: err}
@@ -230,9 +235,10 @@ func (m AddModel) saveCard() tea.Cmd {
 	hint := strings.TrimSpace(m.inputs[2].Value())
 	example := strings.TrimSpace(m.inputs[3].Value())
 	exampleTranslation := m.exampleTranslation
+	exampleWord := m.exampleWord
 	database := m.db
 	return func() tea.Msg {
-		id, err := db.CreateCard(database, front, back, hint, example, exampleTranslation)
+		id, err := db.CreateCard(database, front, back, hint, example, exampleTranslation, exampleWord)
 		if err != nil {
 			// Surface error as a status message by returning to confirm step
 			// We return a special message type here

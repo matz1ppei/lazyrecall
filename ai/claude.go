@@ -42,25 +42,26 @@ func (c *ClaudeClient) GenerateHint(ctx context.Context, front, back string) (st
 	return c.chat(ctx, prompt)
 }
 
-func (c *ClaudeClient) GenerateExample(ctx context.Context, front, back string) (example, translation string, err error) {
+func (c *ClaudeClient) GenerateExample(ctx context.Context, front, back string) (example, translation, exampleWord string, err error) {
 	prompt := fmt.Sprintf(
-		"word: %s\nmeaning: %s\nGenerate one natural example sentence using this word, and its English translation.\nReturn ONLY a JSON object: {\"example\": \"...\", \"translation\": \"...\"}",
+		"word: %s\nmeaning: %s\nGenerate one natural example sentence using this word (the exact form used may be conjugated), its English translation, and the exact word form as it appears in the sentence.\nReturn ONLY a JSON object: {\"example\": \"...\", \"translation\": \"...\", \"example_word\": \"...\"}",
 		front, back,
 	)
 	raw, err := c.chat(ctx, prompt)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	raw = strings.ReplaceAll(raw, "```json", "")
 	raw = strings.ReplaceAll(raw, "```", "")
 	var result struct {
 		Example     string `json:"example"`
 		Translation string `json:"translation"`
+		ExampleWord string `json:"example_word"`
 	}
 	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &result); err != nil {
-		return "", "", fmt.Errorf("claude: parse example JSON: %w (raw: %.200s)", err, raw)
+		return "", "", "", fmt.Errorf("claude: parse example JSON: %w (raw: %.200s)", err, raw)
 	}
-	return result.Example, result.Translation, nil
+	return result.Example, result.Translation, result.ExampleWord, nil
 }
 
 func (c *ClaudeClient) GenerateExampleTranslation(ctx context.Context, front, back, example string) (string, error) {
@@ -86,7 +87,7 @@ func (c *ClaudeClient) GenerateCards(ctx context.Context, topic string, rankStar
 		MaxTokens: int64(300 * count),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(
-				"Generate %d flashcard(s) about: %s. These should be the most common words ranked #%d to #%d by frequency. Return ONLY a JSON array: [{\"front\": ..., \"back\": ..., \"hint\": ..., \"example\": \"example sentence using the word\"}, ...].",
+				"Generate %d flashcard(s) about: %s. These should be the most common words ranked #%d to #%d by frequency. Return ONLY a JSON array: [{\"front\": ..., \"back\": ..., \"hint\": ..., \"example\": \"example sentence using the word\", \"example_word\": \"exact word form used in the sentence\"}, ...].",
 				count, topic, rankStart, rankEnd,
 			))),
 		},
@@ -110,7 +111,7 @@ func (c *ClaudeClient) GenerateCards(ctx context.Context, topic string, rankStar
 
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {
-		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}
+		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation, ExampleWord: c.ExampleWord}
 	}
 	return result, nil
 }
@@ -163,9 +164,8 @@ func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, 
 		MaxTokens: int64(300 * len(words)),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(
-				`For each %s word listed, generate: "back" (English translation/meaning), "hint" (short memory mnemonic), "example" (one natural example sentence that contains the word in its exact listed form), "example_translation" (English translation of the example sentence). `+
-					`Important: the example sentence must use the word exactly as listed — do not conjugate or inflect it. `+
-					`Words: %s. Return ONLY a JSON array: [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<English translation of example>"}, ...]`,
+				`For each %s word listed, generate: "back" (English translation/meaning), "hint" (short memory mnemonic), "example" (one natural example sentence using the word), "example_translation" (English translation of the example sentence), "example_word" (the exact word form as it appears in the sentence — may be conjugated or inflected). `+
+					`Words: %s. Return ONLY a JSON array: [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<English translation of example>", "example_word": "<exact form in sentence>"}, ...]`,
 				topic, string(wordsJSON),
 			))),
 		},
@@ -189,7 +189,7 @@ func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, 
 	}
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {
-		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}
+		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation, ExampleWord: c.ExampleWord}
 	}
 	return result, nil
 }
@@ -201,7 +201,7 @@ func (c *ClaudeClient) GenerateCardsFromWords(ctx context.Context, words []WordP
 		MaxTokens: int64(300 * len(words)),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(
-				"For each word pair, add a short memory hint, one natural example sentence, and an English translation of that example sentence. Words: %s. Return ONLY a JSON array (same order): [{\"front\": ..., \"back\": ..., \"hint\": \"short mnemonic\", \"example\": \"example sentence\", \"example_translation\": \"English translation of example\"}, ...].",
+				"For each word pair, add a short memory hint, one natural example sentence, an English translation of that example sentence, and the exact word form as it appears in the sentence. Words: %s. Return ONLY a JSON array (same order): [{\"front\": ..., \"back\": ..., \"hint\": \"short mnemonic\", \"example\": \"example sentence\", \"example_translation\": \"English translation of example\", \"example_word\": \"exact word form in sentence\"}, ...].",
 				string(wordsJSON),
 			))),
 		},
@@ -223,7 +223,7 @@ func (c *ClaudeClient) GenerateCardsFromWords(ctx context.Context, words []WordP
 	}
 	result := make([]GeneratedCard, len(cards))
 	for i, c := range cards {
-		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation}
+		result[i] = GeneratedCard{Front: c.Front, Back: c.Back, Hint: c.Hint, Example: c.Example, ExampleTranslation: c.ExampleTranslation, ExampleWord: c.ExampleWord}
 	}
 	return result, nil
 }

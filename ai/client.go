@@ -32,6 +32,7 @@ type GeneratedCard struct {
 	Hint               string
 	Example            string
 	ExampleTranslation string
+	ExampleWord        string
 }
 
 type WordPair struct {
@@ -41,7 +42,7 @@ type WordPair struct {
 
 type Client interface {
 	GenerateHint(ctx context.Context, front, back string) (string, error)
-	GenerateExample(ctx context.Context, front, back string) (example, translation string, err error)
+	GenerateExample(ctx context.Context, front, back string) (example, translation, exampleWord string, err error)
 	GenerateExampleTranslation(ctx context.Context, front, back, example string) (string, error)
 	GenerateCard(ctx context.Context, topic string) (front, back, hint string, err error)
 	GenerateCards(ctx context.Context, topic string, start, end int) ([]GeneratedCard, error)
