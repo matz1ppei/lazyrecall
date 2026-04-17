@@ -25,7 +25,8 @@ const (
 	sessionPhaseReverseReview
 	sessionPhaseBrainDump2 // free-recall after ReverseReview
 	sessionPhaseBlank
-	sessionPhaseBrainDump3 // free-recall after Blank
+	sessionPhaseBrainDump3   // free-recall after Blank
+	sessionPhaseRetryReverse // wrong cards から Reverse Review を1周（FSRS採点後）
 	sessionPhaseDone
 )
 
@@ -60,6 +61,9 @@ type SessionModel struct {
 	blankSkipped      bool // no cards with translations
 	reviewCorrectIDs  []int64
 	reverseCorrectIDs []int64
+	retryCards        []db.CardWithReview
+	retryReview       ReverseInputModel
+	retryReviewDone   bool
 	startedAt         time.Time
 	finishedAt        time.Time
 }
@@ -119,7 +123,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.phase {
 		case sessionPhasePreview, sessionPhaseReview, sessionPhaseBrainDump1,
 			sessionPhaseMatch, sessionPhaseReverseReview, sessionPhaseBrainDump2,
-			sessionPhaseBlank, sessionPhaseBrainDump3:
+			sessionPhaseBlank, sessionPhaseBrainDump3, sessionPhaseRetryReverse:
 			m.quitting = true
 			return m, nil
 		}
@@ -183,6 +187,11 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.brainDump3 = updated.(BrainDumpModel)
 		return m, cmd
 
+	case sessionPhaseRetryReverse:
+		updated, cmd := m.retryReview.Update(msg)
+		m.retryReview = updated.(ReverseInputModel)
+		return m, cmd
+
 	case sessionPhaseDone:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			if key.String() == "enter" || key.String() == "esc" || key.String() == " " {
@@ -231,6 +240,11 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		// Scores here do NOT influence FSRS — only Review/Match/ReverseReview/Blank outcomes do.
 		m.brainDump3 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 3", onComplete)
 		return m, m.brainDump3.Init()
+	case sessionPhaseRetryReverse:
+		// RetryReverse shows wrong cards one more time. FSRS is already scored, so
+		// this phase is for reinforcement only — results do not affect scheduling.
+		m.retryReview = NewReverseInputModelWithCards(m.db, m.retryCards, onComplete)
+		return m, m.retryReview.Init()
 	}
 	return m, nil
 }
@@ -284,13 +298,26 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 	case sessionPhaseBrainDump3:
 		// BrainDump3 result does NOT feed into FSRS. FSRS scoring uses only
 		// Review/Match/ReverseReview/Blank correctness captured above.
-		m.phase = sessionPhaseDone
-		m.finishedAt = time.Now()
 		reviewCorrectIDs := m.reviewCorrectIDs
 		reverseCorrectIDs := m.reverseCorrectIDs
 		matchWrongIDs := m.match.wrongCardIDs
 		blankCorrectIDs := m.blank.correctIDs
 		cards := m.cards
+
+		// Collect wrong cards for RetryReverse before FSRS scoring runs.
+		var retryCards []db.CardWithReview
+		for _, cwr := range cards {
+			card := cwr.Card
+			reviewOK := containsID(reviewCorrectIDs, card.ID)
+			matchOK := !matchWrongIDs[card.ID]
+			reverseOK := containsID(reverseCorrectIDs, card.ID)
+			blankOK := containsID(blankCorrectIDs, card.ID) || card.ExampleTranslation == ""
+			if !(reviewOK && matchOK && reverseOK && blankOK) {
+				retryCards = append(retryCards, cwr)
+			}
+		}
+		m.retryCards = retryCards
+
 		markCmd := func() tea.Msg {
 			for _, cwr := range cards {
 				card := cwr.Card
@@ -306,7 +333,22 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			}
 			return nil
 		}
+
+		if len(retryCards) > 0 {
+			// Run FSRS scoring in background, then start RetryReverse.
+			m2, initCmd := m.startPhase(sessionPhaseRetryReverse)
+			return m2, tea.Batch(markCmd, initCmd)
+		}
+		// No wrong cards — go straight to Done.
+		m.phase = sessionPhaseDone
+		m.finishedAt = time.Now()
 		return m, markCmd
+
+	case sessionPhaseRetryReverse:
+		m.retryReviewDone = true
+		m.phase = sessionPhaseDone
+		m.finishedAt = time.Now()
+		return m, nil
 	}
 	return m, nil
 }
@@ -385,6 +427,8 @@ func (m SessionModel) View() string {
 		return m.blank.View()
 	case sessionPhaseBrainDump3:
 		return m.brainDump3.View()
+	case sessionPhaseRetryReverse:
+		return m.retryReview.View()
 	case sessionPhaseDone:
 		return m.viewDone()
 	}
@@ -411,6 +455,9 @@ func (m SessionModel) viewDone() string {
 			}
 			return ""
 		}()},
+	}
+	if len(m.retryCards) > 0 {
+		phases = append(phases, phaseStatus{"Retry Reverse", m.retryReviewDone, fmt.Sprintf(" (%d cards)", len(m.retryCards))})
 	}
 
 	for _, p := range phases {
