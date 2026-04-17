@@ -54,7 +54,7 @@ go build -o lazyrecall .
 | `ANTHROPIC_API_KEY` | Claude APIキー | — |
 | `AI_BACKEND` | `claude` または `ollama` | `ollama` |
 | `OLLAMA_HOST` | OllamaサーバーURL | `http://localhost:11434` |
-| `OLLAMA_MODEL` | 使用するOllamaモデル | `qwen2.5:7b` |
+| `OLLAMA_MODEL` | 使用するOllamaモデル | `gemma4:e4b` |
 
 **Claudeを使う場合:**
 
@@ -79,7 +79,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 インストール後、モデルを取得して起動します。
 
 ```bash
-ollama pull qwen2.5:7b
+ollama pull gemma4:e4b
 ollama serve   # 別ターミナルで起動（macOSのDesktop App使用時は不要）
 go run ./main.go
 ```
