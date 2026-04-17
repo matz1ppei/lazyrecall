@@ -13,8 +13,13 @@ type AutoAdd struct {
 	LangName string `json:"lang_name"` // e.g. "Spanish"
 }
 
+type Notify struct {
+	WebhookURL string `json:"webhook_url"`
+}
+
 type Config struct {
 	AutoAdd AutoAdd `json:"auto_add"`
+	Notify  Notify  `json:"notify"`
 }
 
 func DefaultConfig() Config {

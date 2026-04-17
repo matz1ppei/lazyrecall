@@ -15,7 +15,7 @@ type DailySession struct {
 }
 
 func GetTodaySession(database *sql.DB) (DailySession, error) {
-	today := time.Now().UTC().Format("2006-01-02")
+	today := time.Now().Format("2006-01-02")
 	var s DailySession
 	var rd, md, revd, bd, aad int
 	err := database.QueryRow(
@@ -37,7 +37,7 @@ func GetTodaySession(database *sql.DB) (DailySession, error) {
 
 func MarkReviewDone(database *sql.DB) error {
 	_, err := database.Exec(
-		`INSERT INTO daily_sessions (date, review_done) VALUES (date('now'), 1)
+		`INSERT INTO daily_sessions (date, review_done) VALUES (date('now', 'localtime'), 1)
 		 ON CONFLICT(date) DO UPDATE SET review_done = 1`,
 	)
 	return err
@@ -45,7 +45,7 @@ func MarkReviewDone(database *sql.DB) error {
 
 func MarkMatchDone(database *sql.DB) error {
 	_, err := database.Exec(
-		`INSERT INTO daily_sessions (date, match_done) VALUES (date('now'), 1)
+		`INSERT INTO daily_sessions (date, match_done) VALUES (date('now', 'localtime'), 1)
 		 ON CONFLICT(date) DO UPDATE SET match_done = 1`,
 	)
 	return err
@@ -53,7 +53,7 @@ func MarkMatchDone(database *sql.DB) error {
 
 func MarkReverseDone(database *sql.DB) error {
 	_, err := database.Exec(
-		`INSERT INTO daily_sessions (date, reverse_done) VALUES (date('now'), 1)
+		`INSERT INTO daily_sessions (date, reverse_done) VALUES (date('now', 'localtime'), 1)
 		 ON CONFLICT(date) DO UPDATE SET reverse_done = 1`,
 	)
 	return err
@@ -61,7 +61,7 @@ func MarkReverseDone(database *sql.DB) error {
 
 func MarkAutoAddDone(database *sql.DB) error {
 	_, err := database.Exec(
-		`INSERT INTO daily_sessions (date, auto_add_done) VALUES (date('now'), 1)
+		`INSERT INTO daily_sessions (date, auto_add_done) VALUES (date('now', 'localtime'), 1)
 		 ON CONFLICT(date) DO UPDATE SET auto_add_done = 1`,
 	)
 	return err
@@ -69,7 +69,7 @@ func MarkAutoAddDone(database *sql.DB) error {
 
 func MarkBlankDone(database *sql.DB) error {
 	_, err := database.Exec(
-		`INSERT INTO daily_sessions (date, blank_done) VALUES (date('now'), 1)
+		`INSERT INTO daily_sessions (date, blank_done) VALUES (date('now', 'localtime'), 1)
 		 ON CONFLICT(date) DO UPDATE SET blank_done = 1`,
 	)
 	return err
@@ -78,7 +78,7 @@ func MarkBlankDone(database *sql.DB) error {
 // GetRecentSessionDates は過去 days 日間の学習完了日の集合を返す。
 // いずれかのフェーズ（review/match/reverse/blank）が完了した日を対象とする。
 func GetRecentSessionDates(database *sql.DB, days int) (map[string]bool, error) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format("2006-01-02")
+	cutoff := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
 	// date(date) でDATE型をYYYY-MM-DD文字列として取得する（ドライバのtime.Time変換を回避）
 	rows, err := database.Query(
 		`SELECT date(date) FROM daily_sessions
