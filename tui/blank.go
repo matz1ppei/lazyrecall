@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"regexp"
 	"strings"
 	"time"
@@ -72,6 +73,7 @@ func (m BlankModel) Init() tea.Cmd {
 					eligible = append(eligible, c)
 				}
 			}
+			rand.Shuffle(len(eligible), func(i, j int) { eligible[i], eligible[j] = eligible[j], eligible[i] })
 			return msgBlankCards(eligible)
 		}
 	}
@@ -89,6 +91,7 @@ func (m BlankModel) Init() tea.Cmd {
 				eligible = append(eligible, c)
 			}
 		}
+		rand.Shuffle(len(eligible), func(i, j int) { eligible[i], eligible[j] = eligible[j], eligible[i] })
 		return msgBlankCards(eligible)
 	}
 }
