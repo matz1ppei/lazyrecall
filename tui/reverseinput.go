@@ -8,6 +8,7 @@ package tui
 import (
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -77,8 +78,12 @@ func newReverseTextInput() textinput.Model {
 
 func (m ReverseInputModel) Init() tea.Cmd {
 	if len(m.preloadedCards) > 0 {
-		cards := m.preloadedCards
-		return func() tea.Msg { return msgReverseInputCards{cards: cards} }
+		cards := make([]db.CardWithReview, len(m.preloadedCards))
+		copy(cards, m.preloadedCards)
+		return func() tea.Msg {
+			rand.Shuffle(len(cards), func(i, j int) { cards[i], cards[j] = cards[j], cards[i] })
+			return msgReverseInputCards{cards: cards}
+		}
 	}
 	database := m.db
 	return func() tea.Msg {
@@ -86,6 +91,7 @@ func (m ReverseInputModel) Init() tea.Cmd {
 		if err != nil || len(cards) == 0 {
 			return msgReverseInputCards{cards: nil}
 		}
+		rand.Shuffle(len(cards), func(i, j int) { cards[i], cards[j] = cards[j], cards[i] })
 		return msgReverseInputCards{cards: cards}
 	}
 }
