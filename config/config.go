@@ -18,8 +18,9 @@ type Notify struct {
 }
 
 type Config struct {
-	AutoAdd AutoAdd `json:"auto_add"`
-	Notify  Notify  `json:"notify"`
+	AutoAdd     AutoAdd `json:"auto_add"`
+	Notify      Notify  `json:"notify"`
+	UserProfile string  `json:"user_profile"`
 }
 
 func DefaultConfig() Config {

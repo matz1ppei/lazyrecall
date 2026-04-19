@@ -53,7 +53,15 @@ type Client interface {
 	GenerateCardsForWords(ctx context.Context, topic string, words []string) ([]GeneratedCard, error)
 }
 
-func NewClient() (Client, error) {
+// profilePrefix returns a context line to prepend to prompts when userProfile is set.
+func profilePrefix(userProfile string) string {
+	if userProfile == "" {
+		return ""
+	}
+	return "User context: " + userProfile + "\n"
+}
+
+func NewClient(userProfile string) (Client, error) {
 	backend := os.Getenv("AI_BACKEND")
 	if backend == "" {
 		backend = "ollama"
@@ -67,16 +75,16 @@ func NewClient() (Client, error) {
 		}
 		model := os.Getenv("OLLAMA_MODEL")
 		if model == "" {
-			model = "qwen2.5:7b"
+			model = "gemma4:e4b"
 		}
-		return &OllamaClient{baseURL: baseURL, model: model}, nil
+		return &OllamaClient{baseURL: baseURL, model: model, userProfile: userProfile}, nil
 
 	case "claude":
 		key := os.Getenv("ANTHROPIC_API_KEY")
 		if key == "" {
 			return nil, nil
 		}
-		return newClaudeClient(key), nil
+		return newClaudeClient(key, userProfile), nil
 
 	default:
 		return nil, nil
