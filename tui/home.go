@@ -73,11 +73,12 @@ type HomeModel struct {
 	importMsg     string
 	statusMsg     string // shown when navigating back from a session phase unexpectedly
 	// configure state
-	cfgLangInput  textinput.Model
-	cfgCountInput textinput.Model
-	cfgEnabled    bool
-	cfgInlineErr  string
-	cfgFocus      int // 0=enabled, 1=lang, 2=count
+	cfgLangInput    textinput.Model
+	cfgCountInput   textinput.Model
+	cfgProfileInput textinput.Model
+	cfgEnabled      bool
+	cfgInlineErr    string
+	cfgFocus        int // 0=enabled, 1=lang, 2=count, 3=profile
 }
 
 func NewHomeModel(database *sql.DB, aiClient ai.Client, cfg config.Config) HomeModel {
@@ -93,13 +94,18 @@ func NewHomeModel(database *sql.DB, aiClient ai.Client, cfg config.Config) HomeM
 	countInput.Placeholder = "20"
 	countInput.CharLimit = 5
 
+	profileInput := textinput.New()
+	profileInput.Placeholder = "e.g. 東京在住でカミーノ・デ・サンティアゴに行く準備をしている"
+	profileInput.CharLimit = 256
+
 	return HomeModel{
-		db:            database,
-		ai:            aiClient,
-		cfg:           cfg,
-		importInput:   ti,
-		cfgLangInput:  langInput,
-		cfgCountInput: countInput,
+		db:              database,
+		ai:              aiClient,
+		cfg:             cfg,
+		importInput:     ti,
+		cfgLangInput:    langInput,
+		cfgCountInput:   countInput,
+		cfgProfileInput: profileInput,
 	}
 }
 
@@ -236,10 +242,12 @@ func (h HomeModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.cfgEnabled = h.cfg.AutoAdd.Enabled
 		h.cfgLangInput.SetValue(h.cfg.AutoAdd.LangName)
 		h.cfgCountInput.SetValue(fmt.Sprintf("%d", h.cfg.AutoAdd.Count))
+		h.cfgProfileInput.SetValue(h.cfg.UserProfile)
 		h.cfgFocus = 0
 		h.cfgInlineErr = ""
 		h.cfgLangInput.Blur()
 		h.cfgCountInput.Blur()
+		h.cfgProfileInput.Blur()
 		return h, nil
 	case "q":
 		return h, tea.Quit
@@ -367,23 +375,27 @@ func (h HomeModel) handleConfigureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.state = homeStateNormal
 		h.cfgLangInput.Blur()
 		h.cfgCountInput.Blur()
+		h.cfgProfileInput.Blur()
 		return h, nil
 	case "tab", "down":
-		h.cfgFocus = (h.cfgFocus + 1) % 3
-		return h, h.syncCfgFocus()
+		h.cfgFocus = (h.cfgFocus + 1) % 4
+		h, cmd := h.syncCfgFocus()
+		return h, cmd
 	case "shift+tab", "up":
-		h.cfgFocus = (h.cfgFocus + 2) % 3
-		return h, h.syncCfgFocus()
+		h.cfgFocus = (h.cfgFocus + 3) % 4
+		h, cmd := h.syncCfgFocus()
+		return h, cmd
 	case "enter":
 		if h.cfgFocus == 0 {
 			h.cfgEnabled = !h.cfgEnabled
 			return h, nil
 		}
-		if h.cfgFocus < 2 {
+		if h.cfgFocus < 3 {
 			h.cfgFocus++
-			return h, h.syncCfgFocus()
+			h, cmd := h.syncCfgFocus()
+			return h, cmd
 		}
-		// focus==2: save
+		// focus==3: save
 		return h.saveConfig()
 	}
 	var cmd tea.Cmd
@@ -391,22 +403,27 @@ func (h HomeModel) handleConfigureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.cfgLangInput, cmd = h.cfgLangInput.Update(msg)
 	} else if h.cfgFocus == 2 {
 		h.cfgCountInput, cmd = h.cfgCountInput.Update(msg)
+	} else if h.cfgFocus == 3 {
+		h.cfgProfileInput, cmd = h.cfgProfileInput.Update(msg)
 	}
 	return h, cmd
 }
 
-func (h HomeModel) syncCfgFocus() tea.Cmd {
+// syncCfgFocus blurs all configure inputs, then focuses the active one.
+// Returns the updated HomeModel (with correct focus state) and the focus Cmd.
+func (h HomeModel) syncCfgFocus() (HomeModel, tea.Cmd) {
+	h.cfgLangInput.Blur()
+	h.cfgCountInput.Blur()
+	h.cfgProfileInput.Blur()
 	switch h.cfgFocus {
 	case 1:
-		return h.cfgLangInput.Focus()
+		return h, h.cfgLangInput.Focus()
 	case 2:
-		h.cfgLangInput.Blur()
-		return h.cfgCountInput.Focus()
-	default:
-		h.cfgLangInput.Blur()
-		h.cfgCountInput.Blur()
+		return h, h.cfgCountInput.Focus()
+	case 3:
+		return h, h.cfgProfileInput.Focus()
 	}
-	return nil
+	return h, nil
 }
 
 func (h HomeModel) saveConfig() (tea.Model, tea.Cmd) {
@@ -445,8 +462,14 @@ func (h HomeModel) saveConfig() (tea.Model, tea.Cmd) {
 	h.cfg.AutoAdd.Language = langCode
 	h.cfg.AutoAdd.LangName = langName
 	h.cfg.AutoAdd.Count = count
+	h.cfg.UserProfile = strings.TrimSpace(h.cfgProfileInput.Value())
 	cfg := h.cfg
 	_ = config.Save(cfg)
+	// ライブクライアントにもプロフィールを即時反映（再起動不要）
+	type profileSetter interface{ SetUserProfile(string) }
+	if ps, ok := h.ai.(profileSetter); ok {
+		ps.SetUserProfile(h.cfg.UserProfile)
+	}
 	h.state = homeStateNormal
 	h.cfgInlineErr = ""
 	h.importMsg = successStyle.Render("Settings saved.")
@@ -600,6 +623,8 @@ func (h HomeModel) View() string {
 		b.WriteString(focusMarker(1) + inputLabelStyle.Render("Language: ") + h.cfgLangInput.View())
 		b.WriteString("\n")
 		b.WriteString(focusMarker(2) + inputLabelStyle.Render("Count:    ") + h.cfgCountInput.View())
+		b.WriteString("\n")
+		b.WriteString(focusMarker(3) + inputLabelStyle.Render("Profile:  ") + h.cfgProfileInput.View())
 		b.WriteString("\n")
 		if h.cfgInlineErr != "" {
 			b.WriteString("\n" + errorStyle.Render(h.cfgInlineErr))

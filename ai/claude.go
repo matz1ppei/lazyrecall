@@ -11,13 +11,19 @@ import (
 )
 
 type ClaudeClient struct {
-	client anthropic.Client
+	client      anthropic.Client
+	userProfile string
 }
 
-func newClaudeClient(apiKey string) *ClaudeClient {
+func newClaudeClient(apiKey, userProfile string) *ClaudeClient {
 	return &ClaudeClient{
-		client: anthropic.NewClient(option.WithAPIKey(apiKey)),
+		client:      anthropic.NewClient(option.WithAPIKey(apiKey)),
+		userProfile: userProfile,
 	}
+}
+
+func (c *ClaudeClient) SetUserProfile(profile string) {
+	c.userProfile = profile
 }
 
 func (c *ClaudeClient) chat(ctx context.Context, prompt string) (string, error) {
@@ -38,12 +44,12 @@ func (c *ClaudeClient) chat(ctx context.Context, prompt string) (string, error) 
 }
 
 func (c *ClaudeClient) GenerateHint(ctx context.Context, front, back string) (string, error) {
-	prompt := fmt.Sprintf("front: %s\nback: %s\nGenerate a short memory hint.", front, back)
+	prompt := profilePrefix(c.userProfile) + fmt.Sprintf("front: %s\nback: %s\nGenerate a short memory hint.", front, back)
 	return c.chat(ctx, prompt)
 }
 
 func (c *ClaudeClient) GenerateExample(ctx context.Context, front, back string) (example, translation, exampleWord string, err error) {
-	prompt := fmt.Sprintf(
+	prompt := profilePrefix(c.userProfile) + fmt.Sprintf(
 		"word: %s\nmeaning: %s\nGenerate one natural example sentence using this word (the exact form used may be conjugated), its English translation, and the exact word form as it appears in the sentence.\nReturn ONLY a JSON object: {\"example\": \"...\", \"translation\": \"...\", \"example_word\": \"...\"}",
 		front, back,
 	)
@@ -86,7 +92,7 @@ func (c *ClaudeClient) GenerateCards(ctx context.Context, topic string, rankStar
 		Model:     anthropic.ModelClaudeHaiku4_5,
 		MaxTokens: int64(300 * count),
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(
+			anthropic.NewUserMessage(anthropic.NewTextBlock(profilePrefix(c.userProfile) + fmt.Sprintf(
 				"Generate %d flashcard(s) about: %s. These should be the most common words ranked #%d to #%d by frequency. Return ONLY a JSON array: [{\"front\": ..., \"back\": ..., \"hint\": ..., \"example\": \"example sentence using the word\", \"example_word\": \"exact word form used in the sentence\"}, ...].",
 				count, topic, rankStart, rankEnd,
 			))),
@@ -163,7 +169,7 @@ func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, 
 		Model:     anthropic.ModelClaudeHaiku4_5,
 		MaxTokens: int64(300 * len(words)),
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(
+			anthropic.NewUserMessage(anthropic.NewTextBlock(profilePrefix(c.userProfile) + fmt.Sprintf(
 				`For each %s word listed, generate: "back" (English translation/meaning), "hint" (short memory mnemonic), "example" (one natural example sentence using the word), "example_translation" (English translation of the example sentence), "example_word" (the exact word form as it appears in the sentence — may be conjugated or inflected). `+
 					`Words: %s. Return ONLY a JSON array: [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<English translation of example>", "example_word": "<exact form in sentence>"}, ...]`,
 				topic, string(wordsJSON),
@@ -200,7 +206,7 @@ func (c *ClaudeClient) GenerateCardsFromWords(ctx context.Context, words []WordP
 		Model:     anthropic.ModelClaudeHaiku4_5,
 		MaxTokens: int64(300 * len(words)),
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(fmt.Sprintf(
+			anthropic.NewUserMessage(anthropic.NewTextBlock(profilePrefix(c.userProfile) + fmt.Sprintf(
 				"For each word pair, add a short memory hint, one natural example sentence, an English translation of that example sentence, and the exact word form as it appears in the sentence. Words: %s. Return ONLY a JSON array (same order): [{\"front\": ..., \"back\": ..., \"hint\": \"short mnemonic\", \"example\": \"example sentence\", \"example_translation\": \"English translation of example\", \"example_word\": \"exact word form in sentence\"}, ...].",
 				string(wordsJSON),
 			))),

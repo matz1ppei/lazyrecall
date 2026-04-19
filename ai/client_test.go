@@ -15,7 +15,7 @@ func TestNewClient_NoEnv_ReturnsNil(t *testing.T) {
 	// When AI_BACKEND is unset we still get an OllamaClient (not nil),
 	// but when AI_BACKEND is explicitly set to an unknown value we get nil.
 	os.Setenv("AI_BACKEND", "none")
-	c, err := NewClient()
+	c, err := NewClient("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestNewClient_ClaudeWithoutKey_ReturnsNil(t *testing.T) {
 	os.Setenv("AI_BACKEND", "claude")
 	os.Unsetenv("ANTHROPIC_API_KEY")
 
-	c, err := NewClient()
+	c, err := NewClient("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

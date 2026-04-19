@@ -27,14 +27,14 @@ func main() {
 	}
 	defer database.Close()
 
-	aiClient, err := ai.NewClient()
-	if err != nil {
-		log.Fatalf("init ai: %v", err)
-	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
+	}
+
+	aiClient, err := ai.NewClient(cfg.UserProfile)
+	if err != nil {
+		log.Fatalf("init ai: %v", err)
 	}
 
 	app := tui.New(database, aiClient, cfg)
