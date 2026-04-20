@@ -15,6 +15,9 @@ type MockClient struct {
 	CardBack                 string
 	CardHint                 string
 	CardErr                  error
+	EvalFeedback             string
+	EvalOK                   bool
+	EvalErr                  error
 }
 
 func (m *MockClient) GenerateHint(_ context.Context, _, _ string) (string, error) {
@@ -66,6 +69,10 @@ func (m *MockClient) GenerateCardsForWords(_ context.Context, _ string, words []
 		cards[i] = GeneratedCard{Front: w, Back: m.CardBack, Hint: m.CardHint}
 	}
 	return cards, nil
+}
+
+func (m *MockClient) EvaluateTranslation(_ context.Context, _, _, _, _, _ string) (string, bool, error) {
+	return m.EvalFeedback, m.EvalOK, m.EvalErr
 }
 
 func (m *MockClient) GenerateCardsFromWords(_ context.Context, words []WordPair) ([]GeneratedCard, error) {
