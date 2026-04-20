@@ -378,7 +378,7 @@ func (m ListModel) View() string {
 		b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards total", total)))
 		b.WriteString("\n\n")
 
-		b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-3s %-12s %-20s %-30s %s", "ID", " x", "Front", "Back", "Example", "Due")))
+		b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-3s %-12s %-20s %-45s %s", "ID", " x", "Front", "Back", "Example", "Due")))
 		b.WriteString("\n")
 
 		end := m.offset + listPageSize
@@ -391,12 +391,12 @@ func (m ListModel) View() string {
 			if m.excluded[strings.ToLower(c.Front)] {
 				mark = "[x]"
 			}
-			line := fmt.Sprintf("%-4d %s %-12s %-20s %-30s %s",
+			line := fmt.Sprintf("%-4d %s %-12s %-20s %-45s %s",
 				c.Card.ID,
 				mark,
 				truncate(c.Front, 12),
 				truncate(c.Back, 20),
-				truncate(c.Example, 30),
+				truncate(c.Example, 45),
 				c.Review.DueDate,
 			)
 			if i == m.cursor {
