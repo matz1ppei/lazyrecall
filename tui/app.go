@@ -117,6 +117,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.blank = NewBlankModel(a.db)
 			return a, a.blank.Init()
 		case screenCompose:
+			if cfg, err := config.Load(); err == nil {
+				a.cfg = cfg
+			}
 			a.compose = NewComposeModel(a.db, a.ai, a.termWidth, a.cfg.FeedbackLanguage)
 			return a, a.compose.Init()
 		case screenSession:
