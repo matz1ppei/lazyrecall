@@ -22,6 +22,7 @@ const (
 	screenMatch
 	screenBlank
 	screenSession
+	screenCompose
 	screenSetup // first-run onboarding, appended last to preserve iota order
 )
 
@@ -46,10 +47,12 @@ type App struct {
 	match         MatchModel
 	blank         BlankModel
 	session       SessionModel
+	compose       ComposeModel
 	setup         SetupModel
 	db            *sql.DB
 	ai            ai.Client
 	cfg           config.Config
+	termWidth     int
 }
 
 func New(db *sql.DB, aiClient ai.Client, cfg config.Config) *App {
@@ -113,6 +116,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenBlank:
 			a.blank = NewBlankModel(a.db)
 			return a, a.blank.Init()
+		case screenCompose:
+			if cfg, err := config.Load(); err == nil {
+				a.cfg = cfg
+			}
+			a.compose = NewComposeModel(a.db, a.ai, a.termWidth, a.cfg.FeedbackLanguage)
+			return a, a.compose.Init()
 		case screenSession:
 			a.session = NewSessionModel(a.db, a.ai)
 			return a, a.session.Init()
@@ -120,6 +129,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.setup = NewSetupModel(a.db, a.ai, a.cfg)
 			return a, a.setup.Init()
 		}
+	case tea.WindowSizeMsg:
+		a.termWidth = msg.Width
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return a, tea.Quit
@@ -194,6 +205,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated = m.(SessionModel)
 		a.session = updated
 		cmd = c
+	case screenCompose:
+		var updated ComposeModel
+		m, c := a.compose.Update(msg)
+		updated = m.(ComposeModel)
+		a.compose = updated
+		cmd = c
 	case screenSetup:
 		var updated SetupModel
 		m, c := a.setup.Update(msg)
@@ -228,6 +245,8 @@ func (a *App) View() string {
 		return a.blank.View()
 	case screenSession:
 		return a.session.View()
+	case screenCompose:
+		return a.compose.View()
 	case screenSetup:
 		return a.setup.View()
 	}

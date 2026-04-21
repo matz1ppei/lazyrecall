@@ -73,12 +73,13 @@ type HomeModel struct {
 	importMsg     string
 	statusMsg     string // shown when navigating back from a session phase unexpectedly
 	// configure state
-	cfgLangInput    textinput.Model
-	cfgCountInput   textinput.Model
-	cfgProfileInput textinput.Model
-	cfgEnabled      bool
-	cfgInlineErr    string
-	cfgFocus        int // 0=enabled, 1=lang, 2=count, 3=profile
+	cfgLangInput         textinput.Model
+	cfgCountInput        textinput.Model
+	cfgProfileInput      textinput.Model
+	cfgFeedbackLangInput textinput.Model
+	cfgEnabled           bool
+	cfgInlineErr         string
+	cfgFocus             int // 0=enabled, 1=lang, 2=count, 3=profile, 4=feedback_lang
 }
 
 func NewHomeModel(database *sql.DB, aiClient ai.Client, cfg config.Config) HomeModel {
@@ -98,14 +99,19 @@ func NewHomeModel(database *sql.DB, aiClient ai.Client, cfg config.Config) HomeM
 	profileInput.Placeholder = "e.g. 東京在住でカミーノ・デ・サンティアゴに行く準備をしている"
 	profileInput.CharLimit = 256
 
+	feedbackLangInput := textinput.New()
+	feedbackLangInput.Placeholder = "e.g. Japanese, English, Spanish"
+	feedbackLangInput.CharLimit = 64
+
 	return HomeModel{
-		db:              database,
-		ai:              aiClient,
-		cfg:             cfg,
-		importInput:     ti,
-		cfgLangInput:    langInput,
-		cfgCountInput:   countInput,
-		cfgProfileInput: profileInput,
+		db:                   database,
+		ai:                   aiClient,
+		cfg:                  cfg,
+		importInput:          ti,
+		cfgLangInput:         langInput,
+		cfgCountInput:        countInput,
+		cfgProfileInput:      profileInput,
+		cfgFeedbackLangInput: feedbackLangInput,
 	}
 }
 
@@ -243,11 +249,13 @@ func (h HomeModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.cfgLangInput.SetValue(h.cfg.AutoAdd.LangName)
 		h.cfgCountInput.SetValue(fmt.Sprintf("%d", h.cfg.AutoAdd.Count))
 		h.cfgProfileInput.SetValue(h.cfg.UserProfile)
+		h.cfgFeedbackLangInput.SetValue(h.cfg.FeedbackLanguage)
 		h.cfgFocus = 0
 		h.cfgInlineErr = ""
 		h.cfgLangInput.Blur()
 		h.cfgCountInput.Blur()
 		h.cfgProfileInput.Blur()
+		h.cfgFeedbackLangInput.Blur()
 		return h, nil
 	case "q":
 		return h, tea.Quit
@@ -268,6 +276,8 @@ func (h HomeModel) handlePracticeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, func() tea.Msg { return MsgGotoScreen{Target: screenMatch} }
 	case "b":
 		return h, func() tea.Msg { return MsgGotoScreen{Target: screenBlank} }
+	case "c":
+		return h, func() tea.Msg { return MsgGotoScreen{Target: screenCompose} }
 	}
 	return h, nil
 }
@@ -376,13 +386,14 @@ func (h HomeModel) handleConfigureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.cfgLangInput.Blur()
 		h.cfgCountInput.Blur()
 		h.cfgProfileInput.Blur()
+		h.cfgFeedbackLangInput.Blur()
 		return h, nil
 	case "tab", "down":
-		h.cfgFocus = (h.cfgFocus + 1) % 4
+		h.cfgFocus = (h.cfgFocus + 1) % 5
 		h, cmd := h.syncCfgFocus()
 		return h, cmd
 	case "shift+tab", "up":
-		h.cfgFocus = (h.cfgFocus + 3) % 4
+		h.cfgFocus = (h.cfgFocus + 4) % 5
 		h, cmd := h.syncCfgFocus()
 		return h, cmd
 	case "enter":
@@ -390,12 +401,12 @@ func (h HomeModel) handleConfigureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			h.cfgEnabled = !h.cfgEnabled
 			return h, nil
 		}
-		if h.cfgFocus < 3 {
+		if h.cfgFocus < 4 {
 			h.cfgFocus++
 			h, cmd := h.syncCfgFocus()
 			return h, cmd
 		}
-		// focus==3: save
+		// focus==4: save
 		return h.saveConfig()
 	}
 	var cmd tea.Cmd
@@ -405,6 +416,8 @@ func (h HomeModel) handleConfigureKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.cfgCountInput, cmd = h.cfgCountInput.Update(msg)
 	} else if h.cfgFocus == 3 {
 		h.cfgProfileInput, cmd = h.cfgProfileInput.Update(msg)
+	} else if h.cfgFocus == 4 {
+		h.cfgFeedbackLangInput, cmd = h.cfgFeedbackLangInput.Update(msg)
 	}
 	return h, cmd
 }
@@ -415,6 +428,7 @@ func (h HomeModel) syncCfgFocus() (HomeModel, tea.Cmd) {
 	h.cfgLangInput.Blur()
 	h.cfgCountInput.Blur()
 	h.cfgProfileInput.Blur()
+	h.cfgFeedbackLangInput.Blur()
 	switch h.cfgFocus {
 	case 1:
 		return h, h.cfgLangInput.Focus()
@@ -422,6 +436,8 @@ func (h HomeModel) syncCfgFocus() (HomeModel, tea.Cmd) {
 		return h, h.cfgCountInput.Focus()
 	case 3:
 		return h, h.cfgProfileInput.Focus()
+	case 4:
+		return h, h.cfgFeedbackLangInput.Focus()
 	}
 	return h, nil
 }
@@ -463,6 +479,7 @@ func (h HomeModel) saveConfig() (tea.Model, tea.Cmd) {
 	h.cfg.AutoAdd.LangName = langName
 	h.cfg.AutoAdd.Count = count
 	h.cfg.UserProfile = strings.TrimSpace(h.cfgProfileInput.Value())
+	h.cfg.FeedbackLanguage = strings.TrimSpace(h.cfgFeedbackLangInput.Value())
 	cfg := h.cfg
 	_ = config.Save(cfg)
 	// ライブクライアントにもプロフィールを即時反映（再起動不要）
@@ -581,6 +598,7 @@ func (h HomeModel) View() string {
 			keyStyle.Render("[v]") + menuItemStyle.Render(" Reverse Review"),
 			keyStyle.Render("[m]") + menuItemStyle.Render(" Match Madness"),
 			keyStyle.Render("[b]") + menuItemStyle.Render(" Blank fill"),
+			keyStyle.Render("[c]") + menuItemStyle.Render(" Compose"),
 		}
 		for _, item := range menu {
 			b.WriteString("  " + item + "\n")
@@ -606,7 +624,7 @@ func (h HomeModel) View() string {
 	case homeStateGenerating:
 		b.WriteString(subtitleStyle.Render("Generating translations... Please wait."))
 	case homeStateConfigure:
-		b.WriteString(subtitleStyle.Render("Configure auto-add"))
+		b.WriteString(subtitleStyle.Render("Configure"))
 		b.WriteString("\n\n")
 		enabledLabel := "Disabled"
 		if h.cfgEnabled {
@@ -626,6 +644,8 @@ func (h HomeModel) View() string {
 		b.WriteString("\n")
 		b.WriteString(focusMarker(3) + inputLabelStyle.Render("Profile:  ") + h.cfgProfileInput.View())
 		b.WriteString("\n")
+		b.WriteString(focusMarker(4) + inputLabelStyle.Render("Feedback: ") + h.cfgFeedbackLangInput.View())
+		b.WriteString("\n")
 		if h.cfgInlineErr != "" {
 			b.WriteString("\n" + errorStyle.Render(h.cfgInlineErr))
 			b.WriteString("\n")
@@ -640,7 +660,7 @@ func (h HomeModel) View() string {
 			keyStyle.Render("[l]") + menuItemStyle.Render(" List cards"),
 			keyStyle.Render("[s]") + menuItemStyle.Render(" Stats"),
 			keyStyle.Render("[t]") + menuItemStyle.Render(" Tools"),
-			keyStyle.Render("[c]") + menuItemStyle.Render(" Configure auto-add"),
+			keyStyle.Render("[c]") + menuItemStyle.Render(" Configure"),
 			keyStyle.Render("[q]") + menuItemStyle.Render(" Quit"),
 		}
 		for _, item := range menu {

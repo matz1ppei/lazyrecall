@@ -200,6 +200,36 @@ func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, 
 	return result, nil
 }
 
+func (c *ClaudeClient) EvaluateTranslation(ctx context.Context, front, back, original, userSentence, feedbackLang string) (string, bool, error) {
+	lang := feedbackLang
+	if lang == "" {
+		lang = "English"
+	}
+	prompt := profilePrefix(c.userProfile) + fmt.Sprintf(
+		"Word: %s (%s)\nOriginal sentence: %s\nLearner's attempt: %s\n"+
+			"Evaluate whether the learner's sentence correctly conveys the meaning of the original. "+
+			"Accept minor grammatical variations, different word order, or conjugation differences if the meaning is preserved. "+
+			"Do NOT penalize missing or incorrect accent marks — the learner cannot type them. "+
+			"Write the feedback in %s. "+
+			"Return ONLY a JSON object: {\"ok\": true/false, \"feedback\": \"brief explanation\"}",
+		front, back, original, userSentence, lang,
+	)
+	raw, err := c.chat(ctx, prompt)
+	if err != nil {
+		return "", false, err
+	}
+	raw = strings.ReplaceAll(raw, "```json", "")
+	raw = strings.ReplaceAll(raw, "```", "")
+	var result struct {
+		OK       bool   `json:"ok"`
+		Feedback string `json:"feedback"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &result); err != nil {
+		return "", false, fmt.Errorf("claude: parse evaluation JSON: %w (raw: %.200s)", err, raw)
+	}
+	return result.Feedback, result.OK, nil
+}
+
 func (c *ClaudeClient) GenerateCardsFromWords(ctx context.Context, words []WordPair) ([]GeneratedCard, error) {
 	wordsJSON, _ := json.Marshal(words)
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{

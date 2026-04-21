@@ -51,6 +51,10 @@ type Client interface {
 	// GenerateCardsForWords generates full cards (back+hint+example) for words
 	// whose meanings are unknown — used with frequency dictionary input.
 	GenerateCardsForWords(ctx context.Context, topic string, words []string) ([]GeneratedCard, error)
+	// EvaluateTranslation checks whether the learner's reconstruction of a sentence
+	// from its translation is acceptable, returning a brief explanation.
+	// feedbackLang specifies the language for the feedback (e.g. "Japanese"); defaults to English if empty.
+	EvaluateTranslation(ctx context.Context, front, back, original, userSentence, feedbackLang string) (feedback string, ok bool, err error)
 }
 
 // profilePrefix returns a context line to prepend to prompts when userProfile is set.
