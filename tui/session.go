@@ -30,7 +30,7 @@ const (
 	sessionPhaseDone
 )
 
-const sessionCardLimit = 20
+const sessionCardLimit = 12
 
 type msgSessionReady struct {
 	cards  []db.CardWithReview
@@ -79,14 +79,21 @@ func NewSessionModel(database *sql.DB, aiClient ai.Client) SessionModel {
 func (m SessionModel) Init() tea.Cmd {
 	database := m.db
 	return func() tea.Msg {
-		cards, err := db.SelectSessionCards(database, sessionCardLimit)
+		excluded, _ := config.LoadExcludedWords()
+		// Fetch extra cards to compensate for exclusions so that after filtering
+		// we still reach sessionCardLimit. Due cards are prioritised;
+		// overflow is filled with upcoming cards. Cap at 4× to avoid large queries.
+		fetchLimit := sessionCardLimit + len(excluded)
+		if fetchLimit > sessionCardLimit*4 {
+			fetchLimit = sessionCardLimit * 4
+		}
+		cards, err := db.SelectSessionCards(database, fetchLimit)
 		if err != nil {
 			return msgSessionReady{reason: fmt.Sprintf("DB error loading cards: %v", err)}
 		}
 		if len(cards) == 0 {
 			return msgSessionReady{reason: "no cards found"}
 		}
-		excluded, _ := config.LoadExcludedWords()
 		var filtered []db.CardWithReview
 		for _, c := range cards {
 			if !excluded[strings.ToLower(c.Front)] {
@@ -95,6 +102,9 @@ func (m SessionModel) Init() tea.Cmd {
 		}
 		if len(filtered) == 0 {
 			return msgSessionReady{reason: "all cards are in the exclude list"}
+		}
+		if len(filtered) > sessionCardLimit {
+			filtered = filtered[:sessionCardLimit]
 		}
 		return msgSessionReady{cards: filtered}
 	}
