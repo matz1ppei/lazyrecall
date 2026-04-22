@@ -75,6 +75,7 @@ type benchmarkState int
 
 const (
 	benchmarkStateLoading  benchmarkState = iota
+	benchmarkStateReady                   // cards loaded, confirm before starting
 	benchmarkStatePlaying                 // showing Back, waiting for typed Front
 	benchmarkStateJudging                 // wrong answer: show diff, wait for y/n
 	benchmarkStateComplete                // all cards done, score shown
@@ -178,9 +179,8 @@ func (m BenchmarkModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cards = msg.cards
 		m.current = 0
 		m.correct = 0
-		m.state = benchmarkStatePlaying
-		m.input.Reset()
-		return m, m.input.Focus()
+		m.state = benchmarkStateReady
+		return m, nil
 
 	case msgBenchmarkSaved:
 		if msg.err != nil {
@@ -216,14 +216,23 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
 		}
 
+	case benchmarkStateReady:
+		switch msg.String() {
+		case "esc":
+			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+		case "enter":
+			m.state = benchmarkStatePlaying
+			m.input.Reset()
+			return m, m.input.Focus()
+		case "u":
+			m.state = benchmarkStateLoading
+			return m, m.refreshSnapshotCmd()
+		}
+
 	case benchmarkStatePlaying:
 		switch msg.String() {
 		case "esc":
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
-		case "u":
-			// Refresh snapshot and restart
-			m.state = benchmarkStateLoading
-			return m, m.refreshSnapshotCmd()
 		case "enter":
 			typed := strings.TrimSpace(m.input.Value())
 			if typed == "" {
@@ -371,6 +380,11 @@ func (m BenchmarkModel) View() string {
 	case benchmarkStateLoading:
 		b.WriteString(subtitleStyle.Render("Loading..."))
 
+	case benchmarkStateReady:
+		b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards loaded", len(m.cards))))
+		b.WriteString("\n\n")
+		b.WriteString(helpStyle.Render("[enter] start  [u] update card set  [esc] back"))
+
 	case benchmarkStateEmpty:
 		b.WriteString(errorStyle.Render("No cards available for benchmark."))
 		b.WriteString("\n\n")
@@ -386,7 +400,7 @@ func (m BenchmarkModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.input.View())
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("[enter] submit  [u] reset card set  [esc] quit"))
+		b.WriteString(helpStyle.Render("[enter] submit  [esc] quit"))
 
 	case benchmarkStateJudging:
 		card := m.cards[m.current]
