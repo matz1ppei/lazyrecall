@@ -14,6 +14,42 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// levenshtein returns the edit distance between two strings (rune-based).
+func levenshtein(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	la, lb := len(ra), len(rb)
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+	prev := make([]int, lb+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= la; i++ {
+		curr := make([]int, lb+1)
+		curr[0] = i
+		for j := 1; j <= lb; j++ {
+			if ra[i-1] == rb[j-1] {
+				curr[j] = prev[j-1]
+			} else {
+				d := prev[j]
+				if curr[j-1] < d {
+					d = curr[j-1]
+				}
+				if prev[j-1] < d {
+					d = prev[j-1]
+				}
+				curr[j] = 1 + d
+			}
+		}
+		prev = curr
+	}
+	return prev[lb]
+}
+
 // benchmarkMaxCards is the maximum number of cards captured in a snapshot.
 // Oldest cards (by ID) are preferred so the set is stable across runs.
 const benchmarkMaxCards = 100
@@ -184,6 +220,10 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc":
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+		case "u":
+			// Refresh snapshot and restart
+			m.state = benchmarkStateLoading
+			return m, m.refreshSnapshotCmd()
 		case "enter":
 			typed := strings.TrimSpace(m.input.Value())
 			if typed == "" {
@@ -191,7 +231,9 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			card := m.cards[m.current]
 			expected := card.Front
-			if normalizeAnswer(typed) == normalizeAnswer(expected) {
+			normTyped := normalizeAnswer(typed)
+			normExpected := normalizeAnswer(expected)
+			if normTyped == normExpected {
 				// Correct
 				m.correct++
 				m.current++
@@ -201,11 +243,20 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.input.Reset()
 				return m, m.input.Focus()
 			}
-			// Wrong: move to judging
-			m.lastTyped = typed
-			m.lastCorrect = expected
-			m.state = benchmarkStateJudging
-			return m, nil
+			// Only offer typo judgment when edit distance == 1
+			if levenshtein(normTyped, normExpected) == 1 {
+				m.lastTyped = typed
+				m.lastCorrect = expected
+				m.state = benchmarkStateJudging
+				return m, nil
+			}
+			// Distance > 1: count as wrong immediately
+			m.current++
+			if m.current >= len(m.cards) {
+				return m, m.saveAndComplete()
+			}
+			m.input.Reset()
+			return m, m.input.Focus()
 		default:
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(msg)
@@ -249,35 +300,8 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return msgBenchmarkHistory{runs: runs, err: err}
 			}
 		case "u":
-			// Refresh snapshot
-			database := m.db
-			return m, func() tea.Msg {
-				all, err := db.ListCards(database)
-				if err != nil {
-					return msgBenchmarkReady{err: err}
-				}
-				excluded, _ := config.LoadExcludedWords()
-				var cards []db.Card
-				for _, c := range all {
-					if !excluded[strings.ToLower(c.Front)] {
-						cards = append(cards, c)
-						if len(cards) == benchmarkMaxCards {
-							break
-						}
-					}
-				}
-				if len(cards) == 0 {
-					return msgBenchmarkReady{}
-				}
-				ids := make([]int64, len(cards))
-				for i, c := range cards {
-					ids[i] = c.ID
-				}
-				if err := db.SetBenchmarkCards(database, ids); err != nil {
-					return msgBenchmarkReady{err: err}
-				}
-				return msgBenchmarkReady{cards: cards}
-			}
+			m.state = benchmarkStateLoading
+			return m, m.refreshSnapshotCmd()
 		}
 
 	case benchmarkStateHistory:
@@ -286,6 +310,37 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m BenchmarkModel) refreshSnapshotCmd() tea.Cmd {
+	database := m.db
+	return func() tea.Msg {
+		all, err := db.ListCards(database)
+		if err != nil {
+			return msgBenchmarkReady{err: err}
+		}
+		excluded, _ := config.LoadExcludedWords()
+		var cards []db.Card
+		for _, c := range all {
+			if !excluded[strings.ToLower(c.Front)] {
+				cards = append(cards, c)
+				if len(cards) == benchmarkMaxCards {
+					break
+				}
+			}
+		}
+		if len(cards) == 0 {
+			return msgBenchmarkReady{}
+		}
+		ids := make([]int64, len(cards))
+		for i, c := range cards {
+			ids[i] = c.ID
+		}
+		if err := db.SetBenchmarkCards(database, ids); err != nil {
+			return msgBenchmarkReady{err: err}
+		}
+		return msgBenchmarkReady{cards: cards}
+	}
 }
 
 func (m BenchmarkModel) saveAndComplete() tea.Cmd {
@@ -331,7 +386,7 @@ func (m BenchmarkModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(m.input.View())
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("[enter] submit  [esc] quit"))
+		b.WriteString(helpStyle.Render("[enter] submit  [u] reset card set  [esc] quit"))
 
 	case benchmarkStateJudging:
 		card := m.cards[m.current]
