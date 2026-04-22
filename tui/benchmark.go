@@ -96,12 +96,13 @@ type msgBenchmarkHistory struct {
 }
 
 type BenchmarkModel struct {
-	db      *sql.DB
-	state   benchmarkState
-	cards   []db.Card
-	current int
-	correct int
-	input   textinput.Model
+	db        *sql.DB
+	state     benchmarkState
+	cards     []db.Card
+	current   int
+	correct   int
+	input     textinput.Model
+	refreshed bool // true when card set was just updated via [u]
 	// judging state
 	lastTyped   string
 	lastCorrect string
@@ -176,9 +177,11 @@ func (m BenchmarkModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = benchmarkStateEmpty
 			return m, nil
 		}
+		wasRefresh := m.state == benchmarkStateLoading && len(m.cards) > 0
 		m.cards = msg.cards
 		m.current = 0
 		m.correct = 0
+		m.refreshed = wasRefresh
 		m.state = benchmarkStateReady
 		return m, nil
 
@@ -381,7 +384,11 @@ func (m BenchmarkModel) View() string {
 		b.WriteString(subtitleStyle.Render("Loading..."))
 
 	case benchmarkStateReady:
-		b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards loaded", len(m.cards))))
+		if m.refreshed {
+			b.WriteString(successStyle.Render(fmt.Sprintf("Card set updated: %d cards", len(m.cards))))
+		} else {
+			b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards loaded", len(m.cards))))
+		}
 		b.WriteString("\n\n")
 		b.WriteString(helpStyle.Render("[enter] start  [u] update card set  [esc] back"))
 

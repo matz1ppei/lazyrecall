@@ -239,6 +239,8 @@ func (h HomeModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, func() tea.Msg { return MsgGotoScreen{Target: screenList} }
 	case "s":
 		return h, func() tea.Msg { return MsgGotoScreen{Target: screenStats} }
+	case "b":
+		return h, func() tea.Msg { return MsgGotoScreen{Target: screenBenchmark} }
 	case "t":
 		h.state = homeStateTools
 		h.importMsg = ""
@@ -309,8 +311,6 @@ func (h HomeModel) handleToolsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.state = homeStateDedup
 		h.importMsg = ""
 		return h, nil
-	case "b":
-		return h, func() tea.Msg { return MsgGotoScreen{Target: screenBenchmark} }
 	}
 	return h, nil
 }
@@ -617,7 +617,6 @@ func (h HomeModel) View() string {
 			keyStyle.Render("[i]") + menuItemStyle.Render(" Import CSV"),
 			keyStyle.Render("[g]") + menuItemStyle.Render(" Generate translations"),
 			keyStyle.Render("[x]") + menuItemStyle.Render(" Deduplicate"),
-			keyStyle.Render("[b]") + menuItemStyle.Render(" Benchmark"),
 		}
 		for _, item := range menu {
 			b.WriteString("  " + item + "\n")
@@ -659,6 +658,7 @@ func (h HomeModel) View() string {
 		menu := []string{
 			keyStyle.Render("[d]") + menuItemStyle.Render(" Daily Session"),
 			keyStyle.Render("[p]") + menuItemStyle.Render(" Practice"),
+			keyStyle.Render("[b]") + menuItemStyle.Render(" Benchmark"),
 			keyStyle.Render("[a]") + menuItemStyle.Render(" Add card"),
 			keyStyle.Render("[l]") + menuItemStyle.Render(" List cards"),
 			keyStyle.Render("[s]") + menuItemStyle.Render(" Stats"),
