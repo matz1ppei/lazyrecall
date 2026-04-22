@@ -227,6 +227,12 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = benchmarkStatePlaying
 			m.input.Reset()
 			return m, m.input.Focus()
+		case "h":
+			database := m.db
+			return m, func() tea.Msg {
+				runs, err := db.ListBenchmarkRuns(database)
+				return msgBenchmarkHistory{runs: runs, err: err}
+			}
 		case "u":
 			m.state = benchmarkStateLoading
 			return m, m.refreshSnapshotCmd()
@@ -390,7 +396,7 @@ func (m BenchmarkModel) View() string {
 			b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards loaded", len(m.cards))))
 		}
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("[enter] start  [u] update card set  [esc] back"))
+		b.WriteString(helpStyle.Render("[enter] start  [h] history  [u] update card set  [esc] back"))
 
 	case benchmarkStateEmpty:
 		b.WriteString(errorStyle.Render("No cards available for benchmark."))
