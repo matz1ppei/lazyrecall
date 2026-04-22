@@ -309,6 +309,8 @@ func (h HomeModel) handleToolsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.state = homeStateDedup
 		h.importMsg = ""
 		return h, nil
+	case "b":
+		return h, func() tea.Msg { return MsgGotoScreen{Target: screenBenchmark} }
 	}
 	return h, nil
 }
@@ -615,6 +617,7 @@ func (h HomeModel) View() string {
 			keyStyle.Render("[i]") + menuItemStyle.Render(" Import CSV"),
 			keyStyle.Render("[g]") + menuItemStyle.Render(" Generate translations"),
 			keyStyle.Render("[x]") + menuItemStyle.Render(" Deduplicate"),
+			keyStyle.Render("[b]") + menuItemStyle.Render(" Benchmark"),
 		}
 		for _, item := range menu {
 			b.WriteString("  " + item + "\n")

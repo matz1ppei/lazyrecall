@@ -23,6 +23,7 @@ const (
 	screenBlank
 	screenSession
 	screenCompose
+	screenBenchmark
 	screenSetup // first-run onboarding, appended last to preserve iota order
 )
 
@@ -48,6 +49,7 @@ type App struct {
 	blank         BlankModel
 	session       SessionModel
 	compose       ComposeModel
+	benchmark     BenchmarkModel
 	setup         SetupModel
 	db            *sql.DB
 	ai            ai.Client
@@ -122,6 +124,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.compose = NewComposeModel(a.db, a.ai, a.termWidth, a.cfg.FeedbackLanguage)
 			return a, a.compose.Init()
+		case screenBenchmark:
+			a.benchmark = NewBenchmarkModel(a.db)
+			return a, a.benchmark.Init()
 		case screenSession:
 			a.session = NewSessionModel(a.db, a.ai)
 			return a, a.session.Init()
@@ -211,6 +216,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated = m.(ComposeModel)
 		a.compose = updated
 		cmd = c
+	case screenBenchmark:
+		var updated BenchmarkModel
+		m, c := a.benchmark.Update(msg)
+		updated = m.(BenchmarkModel)
+		a.benchmark = updated
+		cmd = c
 	case screenSetup:
 		var updated SetupModel
 		m, c := a.setup.Update(msg)
@@ -247,6 +258,8 @@ func (a *App) View() string {
 		return a.session.View()
 	case screenCompose:
 		return a.compose.View()
+	case screenBenchmark:
+		return a.benchmark.View()
 	case screenSetup:
 		return a.setup.View()
 	}

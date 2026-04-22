@@ -51,5 +51,15 @@ func Open(path string) (*sql.DB, error) {
 	db.Exec(`ALTER TABLE reviews ADD COLUMN last_review DATETIME`)
 	db.Exec(`ALTER TABLE daily_sessions ADD COLUMN auto_add_done INTEGER NOT NULL DEFAULT 0`)
 	db.Exec(`ALTER TABLE cards ADD COLUMN example_word TEXT NOT NULL DEFAULT ''`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS benchmark_cards (
+		card_id INTEGER NOT NULL,
+		PRIMARY KEY (card_id)
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS benchmark_runs (
+		id      INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_at  DATETIME NOT NULL,
+		total   INTEGER NOT NULL,
+		correct INTEGER NOT NULL
+	)`)
 	return db, nil
 }
