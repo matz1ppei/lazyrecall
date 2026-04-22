@@ -5,12 +5,35 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
+	"golang.org/x/text/unicode/norm"
 )
+
+// benchmarkMaxCards is the maximum number of cards captured in a snapshot.
+// Oldest cards (by ID) are preferred so the set is stable across runs.
+const benchmarkMaxCards = 100
+
+// normalizeAnswer strips leading/trailing spaces, lowercases, and removes
+// combining diacritical marks so accented characters (é, ü, ñ …) match
+// their unaccented equivalents when the user cannot type them.
+func normalizeAnswer(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	// NFD decomposition separates base letters from combining marks
+	s = norm.NFD.String(s)
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.Is(unicode.Mn, r) {
+			continue // drop combining diacritical mark
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
 
 type benchmarkState int
 
@@ -71,8 +94,8 @@ func (m BenchmarkModel) Init() tea.Cmd {
 
 		var cards []db.Card
 		if len(ids) == 0 {
-			// First run: create snapshot from all non-excluded cards
-			all, err := db.ListCards(database)
+			// First run: create snapshot from the oldest non-excluded cards (capped at benchmarkMaxCards)
+			all, err := db.ListCards(database) // ordered by id ASC
 			if err != nil {
 				return msgBenchmarkReady{err: err}
 			}
@@ -80,6 +103,9 @@ func (m BenchmarkModel) Init() tea.Cmd {
 			for _, c := range all {
 				if !excluded[strings.ToLower(c.Front)] {
 					cards = append(cards, c)
+					if len(cards) == benchmarkMaxCards {
+						break
+					}
 				}
 			}
 			if len(cards) == 0 {
@@ -164,8 +190,8 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			card := m.cards[m.current]
-			expected := strings.TrimSpace(card.Front)
-			if strings.EqualFold(typed, expected) {
+			expected := card.Front
+			if normalizeAnswer(typed) == normalizeAnswer(expected) {
 				// Correct
 				m.correct++
 				m.current++
@@ -235,6 +261,9 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				for _, c := range all {
 					if !excluded[strings.ToLower(c.Front)] {
 						cards = append(cards, c)
+						if len(cards) == benchmarkMaxCards {
+							break
+						}
 					}
 				}
 				if len(cards) == 0 {
