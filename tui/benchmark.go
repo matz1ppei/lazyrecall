@@ -256,6 +256,7 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.correct++
 				m.current++
 				if m.current >= len(m.cards) {
+					m.state = benchmarkStateComplete
 					return m, m.saveAndComplete()
 				}
 				m.input.Reset()
@@ -271,6 +272,7 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Distance > 1: count as wrong immediately
 			m.current++
 			if m.current >= len(m.cards) {
+				m.state = benchmarkStateComplete
 				return m, m.saveAndComplete()
 			}
 			m.input.Reset()
@@ -288,6 +290,7 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.correct++
 			m.current++
 			if m.current >= len(m.cards) {
+				m.state = benchmarkStateComplete
 				return m, m.saveAndComplete()
 			}
 			m.state = benchmarkStatePlaying
@@ -297,6 +300,7 @@ func (m BenchmarkModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Wrong
 			m.current++
 			if m.current >= len(m.cards) {
+				m.state = benchmarkStateComplete
 				return m, m.saveAndComplete()
 			}
 			m.state = benchmarkStatePlaying
@@ -362,7 +366,6 @@ func (m BenchmarkModel) refreshSnapshotCmd() tea.Cmd {
 }
 
 func (m BenchmarkModel) saveAndComplete() tea.Cmd {
-	m.state = benchmarkStateComplete
 	database := m.db
 	total := len(m.cards)
 	correct := m.correct
