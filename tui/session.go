@@ -33,8 +33,9 @@ const (
 const sessionCardLimit = 12
 
 type msgSessionReady struct {
-	cards  []db.CardWithReview
-	reason string // non-empty when session cannot start (e.g. DB error, no cards)
+	cards           []db.CardWithReview
+	reason          string // non-empty when session cannot start (e.g. DB error, no cards)
+	reviewSessionID int64
 }
 
 type msgSessionPhaseComplete struct{}
@@ -64,6 +65,7 @@ type SessionModel struct {
 	retryCards        []db.CardWithReview
 	retryReview       ReverseInputModel
 	retryReviewDone   bool
+	reviewSessionID   int64
 	startedAt         time.Time
 	finishedAt        time.Time
 }
@@ -106,7 +108,9 @@ func (m SessionModel) Init() tea.Cmd {
 		if len(filtered) > sessionCardLimit {
 			filtered = filtered[:sessionCardLimit]
 		}
-		return msgSessionReady{cards: filtered}
+		dayNo, _ := db.CountTodayReviewSessions(database)
+		sessionID, _ := db.StartReviewSession(database, "daily_session", dayNo+1)
+		return msgSessionReady{cards: filtered, reviewSessionID: sessionID}
 	}
 }
 
@@ -149,6 +153,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: "Session could not start: " + reason} }
 		}
 		m.cards = msg.cards
+		m.reviewSessionID = msg.reviewSessionID
 		return m.startPhase(sessionPhasePreview)
 
 	case msgSessionPhaseComplete:
@@ -223,7 +228,7 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		m.preview = NewPreviewModel(m.cards, onComplete)
 		return m, m.preview.Init()
 	case sessionPhaseReview:
-		m.review = NewReviewModelWithCards(m.db, m.cards, onComplete)
+		m.review = NewReviewModelWithCards(m.db, m.cards, m.reviewSessionID, onComplete)
 		return m, m.review.Init()
 	case sessionPhaseBrainDump1:
 		// BrainDump1 gives the learner a free-recall warm-up after Review.
@@ -344,15 +349,16 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			return nil
 		}
 
+		endCmd := m.endReviewSessionCmd()
 		if len(retryCards) > 0 {
 			// Run FSRS scoring in background, then start RetryReverse.
 			m2, initCmd := m.startPhase(sessionPhaseRetryReverse)
-			return m2, tea.Batch(markCmd, initCmd)
+			return m2, tea.Batch(markCmd, initCmd, endCmd)
 		}
 		// No wrong cards — go straight to Done.
 		m.phase = sessionPhaseDone
 		m.finishedAt = time.Now()
-		return m, markCmd
+		return m, tea.Batch(markCmd, endCmd)
 
 	case sessionPhaseRetryReverse:
 		m.retryReviewDone = true
@@ -374,6 +380,18 @@ func containsID(ids []int64, target int64) bool {
 
 // markAgain applies FSRS Again for a card that was not triple-correct.
 // This lowers stability, increments lapses, and schedules a short re-learning interval.
+func (m SessionModel) endReviewSessionCmd() tea.Cmd {
+	if m.reviewSessionID == 0 {
+		return nil
+	}
+	database := m.db
+	sid := m.reviewSessionID
+	return func() tea.Msg {
+		_ = db.EndReviewSession(database, sid)
+		return nil
+	}
+}
+
 func markAgain(database *sql.DB, cardID int64) {
 	r, err := db.GetOrCreateReview(database, cardID)
 	if err != nil {

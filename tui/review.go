@@ -55,6 +55,9 @@ type ReviewModel struct {
 	lastCorrect    bool
 	correctIDs     []int64
 	quitting       bool
+	// response-time tracking
+	reviewSessionID int64     // 0 = do not log
+	shownAt         time.Time // when the current card was displayed
 }
 
 func NewReviewModel(database *sql.DB) ReviewModel {
@@ -64,14 +67,15 @@ func NewReviewModel(database *sql.DB) ReviewModel {
 	}
 }
 
-func NewReviewModelWithCards(database *sql.DB, cards []db.CardWithReview, onComplete tea.Cmd) ReviewModel {
+func NewReviewModelWithCards(database *sql.DB, cards []db.CardWithReview, sessionID int64, onComplete tea.Cmd) ReviewModel {
 	return ReviewModel{
-		db:             database,
-		state:          reviewStateLoading,
-		preloadedCards: cards,
-		ignoreLimit:    true,
-		onComplete:     onComplete,
-		sessionMode:    true,
+		db:              database,
+		state:           reviewStateLoading,
+		preloadedCards:  cards,
+		ignoreLimit:     true,
+		onComplete:      onComplete,
+		sessionMode:     true,
+		reviewSessionID: sessionID,
 	}
 }
 
@@ -174,6 +178,7 @@ func (m ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.correctIndex = msg.correctIndex
 		m.cursorIndex = 0
 		m.state = reviewStateQuestion
+		m.shownAt = time.Now()
 		return m, nil
 
 	case msgReviewResultReset:
@@ -246,6 +251,21 @@ func (m ReviewModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			delay := 600 * time.Millisecond
 			if !m.lastCorrect {
 				delay = 1500 * time.Millisecond
+			}
+			if m.reviewSessionID != 0 {
+				responseTimeMs := time.Since(m.shownAt).Milliseconds()
+				sid := m.reviewSessionID
+				cid := card.Card.ID
+				pos := m.index + 1
+				correct := m.lastCorrect
+				database := m.db
+				return m, tea.Batch(
+					tea.Tick(delay, func(time.Time) tea.Msg { return msgReviewResultReset{} }),
+					func() tea.Msg {
+						_ = db.InsertReviewEvent(database, sid, cid, pos, responseTimeMs, correct)
+						return nil
+					},
+				)
 			}
 			tick := tea.Tick(delay, func(time.Time) tea.Msg { return msgReviewResultReset{} })
 			return m, tick

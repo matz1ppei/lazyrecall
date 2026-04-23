@@ -61,5 +61,20 @@ func Open(path string) (*sql.DB, error) {
 		total   INTEGER NOT NULL,
 		correct INTEGER NOT NULL
 	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS review_sessions (
+		id             INTEGER PRIMARY KEY AUTOINCREMENT,
+		started_at     DATETIME NOT NULL,
+		ended_at       DATETIME,
+		mode           TEXT NOT NULL,
+		day_session_no INTEGER NOT NULL DEFAULT 1
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS review_events (
+		id                INTEGER PRIMARY KEY AUTOINCREMENT,
+		review_session_id INTEGER NOT NULL REFERENCES review_sessions(id),
+		card_id           INTEGER NOT NULL REFERENCES cards(id),
+		position          INTEGER NOT NULL,
+		response_time_ms  INTEGER NOT NULL,
+		correct           INTEGER NOT NULL
+	)`)
 	return db, nil
 }
