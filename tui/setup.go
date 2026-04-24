@@ -203,8 +203,14 @@ func (m SetupModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case setupStatePrompt:
 		switch msg.String() {
 		case "y", "Y":
+			if m.ai == nil {
+				m.inlineErr = "AI not configured. Press [a] to add a card manually."
+				return m, nil
+			}
 			m.state = setupStateLang
 			return m, m.langInput.Focus()
+		case "a", "A":
+			return m, func() tea.Msg { return MsgGotoScreen{Target: screenAdd} }
 		case "n", "N", "esc":
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
 		}
@@ -321,9 +327,21 @@ func (m SetupModel) View() string {
 
 	switch m.state {
 	case setupStatePrompt:
-		b.WriteString(subtitleStyle.Render("No cards found. Would you like to import 20 starter words?"))
-		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("[y] Yes, let's go!  [n/esc] Skip for now"))
+		if m.ai == nil {
+			b.WriteString(subtitleStyle.Render("No cards found. AI is not configured for starter-word import."))
+			b.WriteString("\n\n")
+			b.WriteString(helpStyle.Render("[a] Add your first card manually"))
+			b.WriteString("\n")
+			b.WriteString(helpStyle.Render("[y] Retry import  [n/esc] Back"))
+		} else {
+			b.WriteString(subtitleStyle.Render("No cards found. Would you like to import 20 starter words?"))
+			b.WriteString("\n\n")
+			b.WriteString(helpStyle.Render("[y] Yes, let's go!  [n/esc] Skip for now"))
+		}
+		if m.inlineErr != "" {
+			b.WriteString("\n\n")
+			b.WriteString(errorStyle.Render(m.inlineErr))
+		}
 
 	case setupStateLang:
 		b.WriteString(inputLabelStyle.Render("Language:"))

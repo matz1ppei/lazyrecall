@@ -238,14 +238,12 @@ func (m AddModel) saveCard() tea.Cmd {
 	exampleWord := m.exampleWord
 	database := m.db
 	return func() tea.Msg {
-		id, err := db.CreateCard(database, front, back, hint, example, exampleTranslation, exampleWord)
+		_, err := db.CreateCardWithReview(database, front, back, hint, example, exampleTranslation, exampleWord)
 		if err != nil {
 			// Surface error as a status message by returning to confirm step
 			// We return a special message type here
 			return msgSaveResult{err: err}
 		}
-		// Create the review row immediately so it shows in due list
-		_, _ = db.GetOrCreateReview(database, id)
 		return MsgGotoScreen{Target: screenHome}
 	}
 }

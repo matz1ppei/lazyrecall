@@ -329,6 +329,11 @@ func (h HomeModel) handlePracticeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "b":
 		return h, func() tea.Msg { return MsgGotoScreen{Target: screenBlank} }
 	case "c":
+		if h.ai == nil {
+			h.state = homeStateNormal
+			h.importMsg = errorStyle.Render("AI not configured. Compose requires an AI backend.")
+			return h, nil
+		}
 		return h, func() tea.Msg { return MsgGotoScreen{Target: screenCompose} }
 	}
 	return h, nil

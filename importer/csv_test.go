@@ -42,6 +42,13 @@ func TestImportCSV_ThreeColumns(t *testing.T) {
 	if n != 3 {
 		t.Errorf("want 3 imported, got %d", n)
 	}
+	due, err := db.CountDueCards(database)
+	if err != nil {
+		t.Fatalf("CountDueCards: %v", err)
+	}
+	if due != 3 {
+		t.Errorf("want 3 due cards, got %d", due)
+	}
 }
 
 func TestImportCSV_TwoColumns(t *testing.T) {

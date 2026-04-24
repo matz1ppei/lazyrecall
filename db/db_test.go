@@ -37,6 +37,34 @@ func TestCreateGetCard(t *testing.T) {
 	}
 }
 
+func TestCreateCardWithReviewCreatesReviewRow(t *testing.T) {
+	db := openTestDB(t)
+
+	id, err := CreateCardWithReview(db, "front1", "back1", "hint1", "", "", "")
+	if err != nil {
+		t.Fatalf("CreateCardWithReview: %v", err)
+	}
+	if id <= 0 {
+		t.Fatalf("expected positive id, got %d", id)
+	}
+
+	card, err := GetCard(db, id)
+	if err != nil {
+		t.Fatalf("GetCard: %v", err)
+	}
+	if card.Front != "front1" {
+		t.Fatalf("unexpected card: %+v", card)
+	}
+
+	review, err := GetOrCreateReview(db, id)
+	if err != nil {
+		t.Fatalf("GetOrCreateReview: %v", err)
+	}
+	if review.CardID != id {
+		t.Fatalf("review.CardID = %d, want %d", review.CardID, id)
+	}
+}
+
 func TestListCards(t *testing.T) {
 	db := openTestDB(t)
 
@@ -621,5 +649,47 @@ func TestCountReviewedTodayAddsStandaloneAndSessionCountsWithoutDoubleCounting(t
 	}
 	if stats.ReviewedToday != 2 {
 		t.Fatalf("GetReviewStats.ReviewedToday = %d, want 2", stats.ReviewedToday)
+	}
+}
+
+func TestCountReviewedTodayUsesSessionCompletionDay(t *testing.T) {
+	db := openTestDB(t)
+
+	cardID, _ := CreateCard(db, "front", "back", "", "", "", "")
+
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+	if err := InsertReviewEvent(db, sessionID, cardID, 1, 500, true); err != nil {
+		t.Fatalf("InsertReviewEvent: %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE review_sessions
+		 SET started_at = datetime('now', '-1 day'),
+		     ended_at = datetime('now')
+		 WHERE id = ?`,
+		sessionID,
+	); err != nil {
+		t.Fatalf("UPDATE review_sessions: %v", err)
+	}
+
+	reviewedToday, err := CountReviewedToday(db)
+	if err != nil {
+		t.Fatalf("CountReviewedToday: %v", err)
+	}
+	if reviewedToday != 1 {
+		t.Fatalf("CountReviewedToday = %d, want 1 for a session that ended today", reviewedToday)
+	}
+
+	stats, err := GetReviewStats(db)
+	if err != nil {
+		t.Fatalf("GetReviewStats: %v", err)
+	}
+	if stats.ReviewedToday != 1 {
+		t.Fatalf("GetReviewStats.ReviewedToday = %d, want 1", stats.ReviewedToday)
+	}
+	if stats.CorrectToday != 1 {
+		t.Fatalf("GetReviewStats.CorrectToday = %d, want 1", stats.CorrectToday)
 	}
 }

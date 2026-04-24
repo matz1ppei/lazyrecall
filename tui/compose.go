@@ -16,15 +16,17 @@ import (
 type composeState int
 
 const (
-	composeStateLoading    composeState = iota
-	composeStatePlaying                 // showing translation, waiting for input
-	composeStateEvaluating              // AI call in progress
-	composeStateResult                  // showing feedback
+	composeStateLoading composeState = iota
+	composeStateNoAI
+	composeStatePlaying    // showing translation, waiting for input
+	composeStateEvaluating // AI call in progress
+	composeStateResult     // showing feedback
 	composeStateComplete
 	composeStateEmpty
 )
 
 type msgComposeCards []db.Card
+type msgComposeNoAI struct{}
 type msgComposeEval struct {
 	feedback string
 	ok       bool
@@ -63,6 +65,9 @@ func NewComposeModel(database *sql.DB, aiClient ai.Client, width int, feedbackLa
 }
 
 func (m ComposeModel) Init() tea.Cmd {
+	if m.ai == nil {
+		return func() tea.Msg { return msgComposeNoAI{} }
+	}
 	database := m.db
 	return func() tea.Msg {
 		cards, err := db.ListCardsWithTranslation(database)
@@ -77,6 +82,9 @@ func (m ComposeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		return m, nil
+	case msgComposeNoAI:
+		m.state = composeStateNoAI
 		return m, nil
 	case msgComposeCards:
 		if len(msg) == 0 {
@@ -118,6 +126,13 @@ func (m ComposeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ComposeModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
+	case composeStateNoAI:
+		if msg.String() == "esc" || msg.String() == "enter" {
+			return m, func() tea.Msg {
+				return MsgGotoScreen{Target: screenHome, Reason: "Compose requires AI configuration"}
+			}
+		}
+
 	case composeStateEmpty:
 		if msg.String() == "esc" || msg.String() == "enter" {
 			return m, func() tea.Msg {
@@ -192,6 +207,11 @@ func (m ComposeModel) View() string {
 	switch m.state {
 	case composeStateLoading:
 		b.WriteString(subtitleStyle.Render("Loading..."))
+
+	case composeStateNoAI:
+		b.WriteString(errorStyle.Render("AI not configured. Compose requires an AI backend."))
+		b.WriteString("\n\n")
+		b.WriteString(helpStyle.Render("[enter] back"))
 
 	case composeStateEmpty:
 		b.WriteString(errorStyle.Render("No cards with example translations. Use [g] on home to generate."))

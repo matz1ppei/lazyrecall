@@ -48,12 +48,11 @@ func ImportCSV(database *sql.DB, path string) (imported int, err error) {
 			errs = append(errs, fmt.Errorf("row %d: front and back must not be empty", i+2))
 			continue
 		}
-		id, insertErr := db.CreateCard(database, front, back, hint, "", "", "")
+		_, insertErr := db.CreateCardWithReview(database, front, back, hint, "", "", "")
 		if insertErr != nil {
 			errs = append(errs, fmt.Errorf("row %d: %w", i+2, insertErr))
 			continue
 		}
-		_, _ = db.GetOrCreateReview(database, id)
 		imported++
 	}
 
