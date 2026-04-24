@@ -76,5 +76,10 @@ func Open(path string) (*sql.DB, error) {
 		response_time_ms  INTEGER NOT NULL,
 		correct           INTEGER NOT NULL
 	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS analysis_milestones (
+		key        TEXT PRIMARY KEY,
+		int_value  INTEGER NOT NULL DEFAULT 0,
+		text_value TEXT    NOT NULL DEFAULT ''
+	)`)
 	return db, nil
 }

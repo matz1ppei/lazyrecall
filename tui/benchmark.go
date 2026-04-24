@@ -455,8 +455,8 @@ func (m BenchmarkModel) View() string {
 				if r.Total > 0 {
 					pct = float64(r.Correct) / float64(r.Total) * 100
 				}
-				line := fmt.Sprintf("%-12s  %d / %d  (%.0f%%)",
-					r.RunAt.Local().Format("2006-01-02"), r.Correct, r.Total, pct)
+				line := fmt.Sprintf("%-18s  %d / %d  (%.0f%%)",
+					r.RunAt.Local().Format("2006-01-02 15:04"), r.Correct, r.Total, pct)
 				b.WriteString(labelStyle.Render(line))
 				b.WriteString("\n")
 			}
