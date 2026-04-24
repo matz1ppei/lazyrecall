@@ -33,9 +33,10 @@ type BrainDumpModel struct {
 	totalCount int
 	onComplete tea.Cmd
 	label      string // "Brain Dump 1", "Brain Dump 2", or "Brain Dump 3"
+	hints      string // comma-separated first letters; empty = no hint
 }
 
-func NewBrainDumpModel(cards []db.Card, label string, onComplete tea.Cmd) BrainDumpModel {
+func NewBrainDumpModel(cards []db.Card, label string, hints string, onComplete tea.Cmd) BrainDumpModel {
 	ti := textinput.New()
 	ti.Placeholder = "apple, banana, cherry..."
 	ti.CharLimit = 1024
@@ -48,7 +49,47 @@ func NewBrainDumpModel(cards []db.Card, label string, onComplete tea.Cmd) BrainD
 		totalCount: len(cards),
 		onComplete: onComplete,
 		label:      label,
+		hints:      hints,
 	}
+}
+
+// wordShapeHint returns a masked representation of a word showing the first and last
+// letter with underscores for middle letters (e.g. "hola" → "h__a", "hacer" → "h___r").
+// Words of 1–2 runes are returned as-is.
+func wordShapeHint(word string) string {
+	r := []rune(word)
+	if len(r) <= 2 {
+		return word
+	}
+	mid := strings.Repeat("_", len(r)-2)
+	return string(r[0]) + mid + string(r[len(r)-1])
+}
+
+// wordShapeHints returns a comma-separated string of wordShapeHint for each card's Front.
+// Used for BD1 to show first+last letter with masked middle.
+func wordShapeHints(cards []db.Card) string {
+	var hints []string
+	for _, c := range cards {
+		hints = append(hints, wordShapeHint(c.Front))
+	}
+	return strings.Join(hints, ", ")
+}
+
+// firstLetterHints returns a comma-separated string of the first letter (rune) of each
+// card's Front. If excludeMatched is non-nil, cards where excludeMatched[i]==true are skipped.
+// BD2 passes BD1's matched slice to show only unrecalled cards.
+func firstLetterHints(cards []db.Card, excludeMatched []bool) string {
+	var letters []string
+	for i, c := range cards {
+		if excludeMatched != nil && i < len(excludeMatched) && excludeMatched[i] {
+			continue
+		}
+		r := []rune(c.Front)
+		if len(r) > 0 {
+			letters = append(letters, string(r[0]))
+		}
+	}
+	return strings.Join(letters, ", ")
 }
 
 func (m BrainDumpModel) Init() tea.Cmd {
@@ -122,6 +163,10 @@ func (m BrainDumpModel) View() string {
 	case braindumpStateInput:
 		b.WriteString(subtitleStyle.Render(fmt.Sprintf("Type as many of the %d words as you can remember (comma-separated):", m.totalCount)))
 		b.WriteString("\n\n")
+		if m.hints != "" {
+			b.WriteString(helpStyle.Render("Hints: " + m.hints))
+			b.WriteString("\n")
+		}
 		b.WriteString(m.input.View())
 		b.WriteString("\n\n")
 		b.WriteString(helpStyle.Render("[enter] submit"))
