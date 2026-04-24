@@ -233,7 +233,9 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	case sessionPhaseBrainDump1:
 		// BrainDump1 gives the learner a free-recall warm-up after Review.
 		// Using extractCards here because BrainDumpModel expects []db.Card (not CardWithReview).
-		m.brainDump1 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 1", onComplete)
+		// Showing first-letter hints for all cards lowers initial anxiety while still requiring active recall.
+		cards1 := extractCards(m.cards)
+		m.brainDump1 = NewBrainDumpModel(cards1, "Brain Dump 1", firstLetterHints(cards1, nil), onComplete)
 		return m, m.brainDump1.Init()
 	case sessionPhaseMatch:
 		cards := extractCards(m.cards)
@@ -244,7 +246,9 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		return m, m.reverseReview.Init()
 	case sessionPhaseBrainDump2:
 		// BrainDump2 runs after ReverseReview. Scores do NOT influence FSRS.
-		m.brainDump2 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 2", onComplete)
+		// Hints show only the cards NOT recalled in BD1, so the learner focuses on their gaps.
+		cards2 := extractCards(m.cards)
+		m.brainDump2 = NewBrainDumpModel(cards2, "Brain Dump 2", firstLetterHints(cards2, m.brainDump1.matched), onComplete)
 		return m, m.brainDump2.Init()
 	case sessionPhaseBlank:
 		cards := extractCards(m.cards)
@@ -253,7 +257,8 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	case sessionPhaseBrainDump3:
 		// BrainDump3 runs after Blank as the final recall check before FSRS scoring.
 		// Scores here do NOT influence FSRS — only Review/Match/ReverseReview/Blank outcomes do.
-		m.brainDump3 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 3", onComplete)
+		// No hints: BD3 is pure free recall, measuring retention without scaffolding.
+		m.brainDump3 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 3", "", onComplete)
 		return m, m.brainDump3.Init()
 	case sessionPhaseRetryReverse:
 		// RetryReverse shows wrong cards one more time. FSRS is already scored, so
