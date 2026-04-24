@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -100,6 +101,73 @@ func ListCards(db *sql.DB) ([]Card, error) {
 		cards = append(cards, c)
 	}
 	return cards, rows.Err()
+}
+
+func ListCardsWithReviewByIDs(db *sql.DB, ids []int64) ([]CardWithReview, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	rows, err := db.Query(
+		fmt.Sprintf(
+			`SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.example_word, c.created_at,
+			        COALESCE(r.id,0), COALESCE(r.card_id,0), COALESCE(r.due_date,''), COALESCE(r.interval,1),
+			        COALESCE(r.ease_factor,2.5), COALESCE(r.repetitions,0), r.last_rating, r.reviewed_at,
+			        COALESCE(r.stability,0), COALESCE(r.difficulty,0), COALESCE(r.fsrs_state,0),
+			        COALESCE(r.lapses,0), r.last_review
+			 FROM cards c
+			 LEFT JOIN reviews r ON r.card_id = c.id
+			 WHERE c.id IN (%s)`,
+			strings.Join(placeholders, ","),
+		),
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byID := make(map[int64]CardWithReview, len(ids))
+	for rows.Next() {
+		var cwr CardWithReview
+		var createdAt string
+		var lastRating sql.NullInt64
+		var reviewedAt sql.NullString
+		var lastReview sql.NullString
+		if err := rows.Scan(
+			&cwr.Card.ID, &cwr.Front, &cwr.Back, &cwr.Hint, &cwr.Example, &cwr.Card.ExampleTranslation, &cwr.Card.ExampleWord, &createdAt,
+			&cwr.Review.ID, &cwr.Review.CardID, &cwr.Review.DueDate,
+			&cwr.Review.Interval, &cwr.Review.EaseFactor, &cwr.Review.Repetitions,
+			&lastRating, &reviewedAt,
+			&cwr.Review.Stability, &cwr.Review.Difficulty, &cwr.Review.FSRSState,
+			&cwr.Review.Lapses, &lastReview,
+		); err != nil {
+			return nil, err
+		}
+		cwr.Card.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		scanReview(&cwr.Review, &lastRating, &reviewedAt, &lastReview)
+		byID[cwr.Card.ID] = cwr
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]CardWithReview, 0, len(ids))
+	for _, id := range ids {
+		cwr, ok := byID[id]
+		if !ok {
+			return nil, sql.ErrNoRows
+		}
+		result = append(result, cwr)
+	}
+	return result, nil
 }
 
 func FindCardsByFront(db *sql.DB, front string) ([]Card, error) {

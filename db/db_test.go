@@ -693,3 +693,33 @@ func TestCountReviewedTodayUsesSessionCompletionDay(t *testing.T) {
 		t.Fatalf("GetReviewStats.CorrectToday = %d, want 1", stats.CorrectToday)
 	}
 }
+
+func TestPracticeRunLoggingAndQueries(t *testing.T) {
+	db := openTestDB(t)
+
+	if err := LogPracticeRun(db, "review", time.Now().UTC().Add(-15*time.Minute).Format("2006-01-02 15:04:05"), time.Now().UTC().Add(-10*time.Minute).Format("2006-01-02 15:04:05"), 8, 6); err != nil {
+		t.Fatalf("LogPracticeRun(review): %v", err)
+	}
+	if err := LogPracticeRun(db, "blank", time.Now().UTC().Add(-5*time.Minute).Format("2006-01-02 15:04:05"), time.Now().UTC().Format("2006-01-02 15:04:05"), 4, 3); err != nil {
+		t.Fatalf("LogPracticeRun(blank): %v", err)
+	}
+
+	stats, err := GetTodayPracticeStats(db)
+	if err != nil {
+		t.Fatalf("GetTodayPracticeStats: %v", err)
+	}
+	if stats.Runs != 2 || stats.Items != 12 || stats.Correct != 9 {
+		t.Fatalf("unexpected practice stats: %+v", stats)
+	}
+
+	runs, err := ListRecentPracticeRuns(db, 5)
+	if err != nil {
+		t.Fatalf("ListRecentPracticeRuns: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("len(runs) = %d, want 2", len(runs))
+	}
+	if runs[0].Mode != "blank" {
+		t.Fatalf("runs[0].Mode = %q, want blank", runs[0].Mode)
+	}
+}

@@ -42,6 +42,8 @@ type BlankModel struct {
 	preloadedCards []db.Card
 	sessionMode    bool
 	onComplete     tea.Cmd
+	startedAt      time.Time
+	loggedComplete bool
 }
 
 func NewBlankModel(database *sql.DB) BlankModel {
@@ -130,6 +132,8 @@ func (m BlankModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cards = []db.Card(msg)
 		m.current = 0
 		m.correct = 0
+		m.loggedComplete = false
+		m.startedAt = time.Now()
 		m.state = blankStatePlaying
 		m.input.Reset()
 		return m, m.input.Focus()
@@ -138,6 +142,18 @@ func (m BlankModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current++
 		if m.current >= len(m.cards) {
 			m.state = blankStateComplete
+			if !m.sessionMode && !m.loggedComplete {
+				m.loggedComplete = true
+				database := m.db
+				startedAt := m.startedAt.UTC().Format("2006-01-02 15:04:05")
+				finishedAt := time.Now().UTC().Format("2006-01-02 15:04:05")
+				total := len(m.cards)
+				correct := m.correct
+				return m, func() tea.Msg {
+					_ = db.LogPracticeRun(database, "blank", startedAt, finishedAt, total, correct)
+					return nil
+				}
+			}
 			return m, nil
 		}
 		m.state = blankStatePlaying

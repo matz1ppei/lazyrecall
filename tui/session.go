@@ -34,10 +34,19 @@ const (
 const sessionCardLimit = 12
 
 type msgSessionReady struct {
-	cards           []db.CardWithReview
-	reason          string // non-empty when session cannot start (e.g. DB error, no cards)
-	reviewSessionID int64
-	startErr        string // non-empty when StartReviewSession failed (session continues, but review_sessions row missing)
+	cards             []db.CardWithReview
+	reason            string // non-empty when session cannot start (e.g. DB error, no cards)
+	reviewSessionID   int64
+	startErr          string // non-empty when StartReviewSession failed (session continues, but review_sessions row missing)
+	phase             sessionPhase
+	reviewCorrectIDs  []int64
+	reverseCorrectIDs []int64
+	matchWrongIDs     []int64
+	blankCorrectIDs   []int64
+	blankSkipped      bool
+	retryCardIDs      []int64
+	startedAt         time.Time
+	resumed           bool
 }
 
 type msgSessionPhaseComplete struct{}
@@ -84,6 +93,7 @@ type SessionModel struct {
 	saveErr           string
 	startedAt         time.Time
 	finishedAt        time.Time
+	resumed           bool
 }
 
 func NewSessionModel(database *sql.DB, aiClient ai.Client) SessionModel {
@@ -97,6 +107,32 @@ func NewSessionModel(database *sql.DB, aiClient ai.Client) SessionModel {
 func (m SessionModel) Init() tea.Cmd {
 	database := m.db
 	return func() tea.Msg {
+		snapshot, err := config.LoadDailySessionSnapshot()
+		today := time.Now().Format("2006-01-02")
+		if err == nil && snapshot.Date != "" && snapshot.Date != today {
+			_ = config.ClearDailySessionSnapshot()
+		}
+		if err == nil && snapshot.Date == today && len(snapshot.CardIDs) > 0 {
+			cards, cardErr := db.ListCardsWithReviewByIDs(database, snapshot.CardIDs)
+			if cardErr == nil {
+				return msgSessionReady{
+					cards:             cards,
+					reviewSessionID:   snapshot.ReviewSessionID,
+					startErr:          snapshot.StartErr,
+					phase:             sessionPhaseFromSnapshot(snapshot.Phase),
+					reviewCorrectIDs:  snapshot.ReviewCorrectIDs,
+					reverseCorrectIDs: snapshot.ReverseCorrectIDs,
+					matchWrongIDs:     snapshot.MatchWrongIDs,
+					blankCorrectIDs:   snapshot.BlankCorrectIDs,
+					blankSkipped:      snapshot.BlankSkipped,
+					retryCardIDs:      snapshot.RetryCardIDs,
+					startedAt:         snapshot.StartedAt,
+					resumed:           true,
+				}
+			}
+			_ = config.ClearDailySessionSnapshot()
+		}
+
 		excluded, _ := config.LoadExcludedWords()
 		// Fetch extra cards to compensate for exclusions so that after filtering
 		// we still reach sessionCardLimit. Due cards are prioritised;
@@ -133,7 +169,7 @@ func (m SessionModel) Init() tea.Cmd {
 		} else {
 			debuglog.Infof("daily_session started: session_id=%d cards=%d day_no=%d", sessionID, len(filtered), dayNo+1)
 		}
-		return msgSessionReady{cards: filtered, reviewSessionID: sessionID, startErr: startErrStr}
+		return msgSessionReady{cards: filtered, reviewSessionID: sessionID, startErr: startErrStr, phase: sessionPhasePreview}
 	}
 }
 
@@ -179,7 +215,22 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cards = msg.cards
 		m.reviewSessionID = msg.reviewSessionID
 		m.startErr = msg.startErr
-		return m.startPhase(sessionPhasePreview)
+		m.reviewCorrectIDs = append([]int64(nil), msg.reviewCorrectIDs...)
+		m.reverseCorrectIDs = append([]int64(nil), msg.reverseCorrectIDs...)
+		m.match.wrongCardIDs = make(map[int64]bool, len(msg.matchWrongIDs))
+		for _, id := range msg.matchWrongIDs {
+			m.match.wrongCardIDs[id] = true
+		}
+		m.blank.correctIDs = append([]int64(nil), msg.blankCorrectIDs...)
+		m.blankSkipped = msg.blankSkipped
+		m.retryCards = filterCardsByID(msg.cards, msg.retryCardIDs)
+		m.startedAt = msg.startedAt
+		m.resumed = msg.resumed
+		phase := msg.phase
+		if phase == sessionPhaseLoading {
+			phase = sessionPhasePreview
+		}
+		return m.startPhase(phase)
 
 	case msgSessionPhaseComplete:
 		return m.advancePhase()
@@ -187,6 +238,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgMarkDone:
 		m.phase = sessionPhaseDone
 		m.finishedAt = time.Now()
+		_ = config.ClearDailySessionSnapshot()
 		debuglog.Infof("daily_session completed: session_id=%d reviewed_cards=%d retry_cards=%d", m.reviewSessionID, len(m.cards), len(m.retryCards))
 		return m, nil
 
@@ -282,14 +334,30 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	onComplete := tea.Cmd(func() tea.Msg { return msgSessionPhaseComplete{} })
 	switch phase {
 	case sessionPhasePreview:
-		m.startedAt = time.Now()
+		if m.startedAt.IsZero() {
+			m.startedAt = time.Now()
+		}
 		debuglog.Infof("daily_session phase started: preview")
 		m.preview = NewPreviewModel(m.cards, onComplete)
-		return m, m.preview.Init()
+		return m, tea.Batch(m.preview.Init(), m.saveSnapshotCmd())
 	case sessionPhaseReview:
 		debuglog.Infof("daily_session phase started: review")
 		m.review = NewReviewModelWithCards(m.db, m.cards, m.reviewSessionID, onComplete)
-		return m, m.review.Init()
+		initCmd := m.review.Init()
+		if m.resumed && m.reviewSessionID != 0 {
+			database := m.db
+			sid := m.reviewSessionID
+			initCmd = tea.Batch(
+				func() tea.Msg {
+					if err := db.DeleteReviewEventsForSession(database, sid); err != nil {
+						debuglog.Errorf("daily_session resume reset failed: session_id=%d err=%v", sid, err)
+					}
+					return nil
+				},
+				initCmd,
+			)
+		}
+		return m, tea.Batch(initCmd, m.saveSnapshotCmd())
 	case sessionPhaseBrainDump1:
 		// BrainDump1 gives the learner a free-recall warm-up after Review.
 		// Using extractCards here because BrainDumpModel expects []db.Card (not CardWithReview).
@@ -297,41 +365,46 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		cards1 := extractCards(m.cards)
 		debuglog.Infof("daily_session phase started: braindump1")
 		m.brainDump1 = NewBrainDumpModel(cards1, "Brain Dump 1", wordShapeHints(cards1), onComplete)
-		return m, m.brainDump1.Init()
+		return m, tea.Batch(m.brainDump1.Init(), m.saveSnapshotCmd())
 	case sessionPhaseMatch:
+		prevWrongIDs := cloneWrongCardMap(m.match.wrongCardIDs)
 		cards := extractCards(m.cards)
 		debuglog.Infof("daily_session phase started: match")
 		m.match = NewMatchModelWithCards(m.db, cards, onComplete)
-		return m, m.match.Init()
+		m.match.wrongCardIDs = prevWrongIDs
+		return m, tea.Batch(m.match.Init(), m.saveSnapshotCmd())
 	case sessionPhaseReverseReview:
 		debuglog.Infof("daily_session phase started: reverse_review")
 		m.reverseReview = NewReverseInputModelWithCards(m.db, m.cards, onComplete)
-		return m, m.reverseReview.Init()
+		m.reverseReview.correctIDs = append([]int64(nil), m.reverseCorrectIDs...)
+		return m, tea.Batch(m.reverseReview.Init(), m.saveSnapshotCmd())
 	case sessionPhaseBrainDump2:
 		// BrainDump2 runs after ReverseReview. Scores do NOT influence FSRS.
 		// Hints show the first letter of all cards.
 		cards2 := extractCards(m.cards)
 		debuglog.Infof("daily_session phase started: braindump2")
 		m.brainDump2 = NewBrainDumpModel(cards2, "Brain Dump 2", firstLetterHints(cards2, nil), onComplete)
-		return m, m.brainDump2.Init()
+		return m, tea.Batch(m.brainDump2.Init(), m.saveSnapshotCmd())
 	case sessionPhaseBlank:
+		prevBlankCorrectIDs := append([]int64(nil), m.blank.correctIDs...)
 		cards := extractCards(m.cards)
 		debuglog.Infof("daily_session phase started: blank")
 		m.blank = NewBlankModelWithCards(m.db, cards, onComplete)
-		return m, m.blank.Init()
+		m.blank.correctIDs = prevBlankCorrectIDs
+		return m, tea.Batch(m.blank.Init(), m.saveSnapshotCmd())
 	case sessionPhaseBrainDump3:
 		// BrainDump3 runs after Blank as the final recall check before FSRS scoring.
 		// Scores here do NOT influence FSRS — only Review/Match/ReverseReview/Blank outcomes do.
 		// No hints: BD3 is pure free recall, measuring retention without scaffolding.
 		debuglog.Infof("daily_session phase started: braindump3")
 		m.brainDump3 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 3", "", onComplete)
-		return m, m.brainDump3.Init()
+		return m, tea.Batch(m.brainDump3.Init(), m.saveSnapshotCmd())
 	case sessionPhaseRetryReverse:
 		// RetryReverse shows wrong cards one more time. FSRS is already scored, so
 		// this phase is for reinforcement only — results do not affect scheduling.
 		debuglog.Infof("daily_session phase started: retry_reverse cards=%d", len(m.retryCards))
 		m.retryReview = NewReverseInputModelWithCards(m.db, m.retryCards, onComplete)
-		return m, m.retryReview.Init()
+		return m, tea.Batch(m.retryReview.Init(), m.saveSnapshotCmd())
 	}
 	return m, nil
 }
@@ -481,6 +554,124 @@ func extractCards(cwrs []db.CardWithReview) []db.Card {
 		cards[i] = cwr.Card
 	}
 	return cards
+}
+
+func filterCardsByID(cards []db.CardWithReview, ids []int64) []db.CardWithReview {
+	if len(ids) == 0 {
+		return nil
+	}
+	byID := make(map[int64]db.CardWithReview, len(cards))
+	for _, card := range cards {
+		byID[card.Card.ID] = card
+	}
+	filtered := make([]db.CardWithReview, 0, len(ids))
+	for _, id := range ids {
+		if card, ok := byID[id]; ok {
+			filtered = append(filtered, card)
+		}
+	}
+	return filtered
+}
+
+func cloneWrongCardMap(src map[int64]bool) map[int64]bool {
+	if len(src) == 0 {
+		return make(map[int64]bool)
+	}
+	dst := make(map[int64]bool, len(src))
+	for id, wrong := range src {
+		dst[id] = wrong
+	}
+	return dst
+}
+
+func (m SessionModel) snapshotPhaseName() string {
+	switch m.phase {
+	case sessionPhasePreview:
+		return "preview"
+	case sessionPhaseReview:
+		return "review"
+	case sessionPhaseBrainDump1:
+		return "braindump1"
+	case sessionPhaseMatch:
+		return "match"
+	case sessionPhaseReverseReview:
+		return "reverse_review"
+	case sessionPhaseBrainDump2:
+		return "braindump2"
+	case sessionPhaseBlank:
+		return "blank"
+	case sessionPhaseBrainDump3:
+		return "braindump3"
+	case sessionPhaseRetryReverse:
+		return "retry_reverse"
+	default:
+		return ""
+	}
+}
+
+func sessionPhaseFromSnapshot(name string) sessionPhase {
+	switch name {
+	case "preview":
+		return sessionPhasePreview
+	case "review":
+		return sessionPhaseReview
+	case "braindump1":
+		return sessionPhaseBrainDump1
+	case "match":
+		return sessionPhaseMatch
+	case "reverse_review":
+		return sessionPhaseReverseReview
+	case "braindump2":
+		return sessionPhaseBrainDump2
+	case "blank":
+		return sessionPhaseBlank
+	case "braindump3":
+		return sessionPhaseBrainDump3
+	case "retry_reverse":
+		return sessionPhaseRetryReverse
+	default:
+		return sessionPhasePreview
+	}
+}
+
+func (m SessionModel) saveSnapshotCmd() tea.Cmd {
+	cardIDs := make([]int64, 0, len(m.cards))
+	for _, card := range m.cards {
+		cardIDs = append(cardIDs, card.Card.ID)
+	}
+	matchWrongIDs := make([]int64, 0, len(m.match.wrongCardIDs))
+	for id, wrong := range m.match.wrongCardIDs {
+		if wrong {
+			matchWrongIDs = append(matchWrongIDs, id)
+		}
+	}
+	retryCardIDs := make([]int64, 0, len(m.retryCards))
+	for _, card := range m.retryCards {
+		retryCardIDs = append(retryCardIDs, card.Card.ID)
+	}
+	snapshot := config.DailySessionSnapshot{
+		Date:              time.Now().Format("2006-01-02"),
+		CardIDs:           cardIDs,
+		ReviewSessionID:   m.reviewSessionID,
+		Phase:             m.snapshotPhaseName(),
+		ReviewCorrectIDs:  append([]int64(nil), m.reviewCorrectIDs...),
+		ReverseCorrectIDs: append([]int64(nil), m.reverseCorrectIDs...),
+		MatchWrongIDs:     matchWrongIDs,
+		BlankCorrectIDs:   append([]int64(nil), m.blank.correctIDs...),
+		BlankSkipped:      m.blankSkipped,
+		RetryCardIDs:      retryCardIDs,
+		StartedAt:         m.startedAt,
+		StartErr:          m.startErr,
+	}
+	return func() tea.Msg {
+		if snapshot.Phase == "" {
+			return nil
+		}
+		if err := config.SaveDailySessionSnapshot(snapshot); err != nil {
+			debuglog.Errorf("daily_session snapshot save failed: phase=%s err=%v", snapshot.Phase, err)
+		}
+		return nil
+	}
 }
 
 func (m SessionModel) View() string {

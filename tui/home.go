@@ -35,7 +35,9 @@ type msgStats struct {
 	due             int
 	overdue         int
 	reviewedToday   int
+	practiceToday   db.PracticeTodayStats
 	session         db.DailySession
+	resumeAvailable bool
 	notifyFatigue   bool
 	notifyBenchmark bool
 }
@@ -71,9 +73,11 @@ type HomeModel struct {
 	due             int
 	overdue         int
 	reviewedToday   int
+	practiceToday   db.PracticeTodayStats
 	statsReady      bool
 	autoAdding      bool
 	session         db.DailySession
+	resumeAvailable bool
 	importInput     textinput.Model
 	importMsg       string
 	statusMsg       string // shown when navigating back from a session phase unexpectedly
@@ -145,7 +149,12 @@ func (h HomeModel) loadStats() tea.Cmd {
 		if err != nil {
 			return msgStats{total: len(cards), due: due, overdue: overdue}
 		}
+		practiceToday, _ := db.GetTodayPracticeStats(database)
 		session, _ := db.GetTodaySession(database)
+		resumeAvailable := false
+		if snapshot, err := config.LoadDailySessionSnapshot(); err == nil {
+			resumeAvailable = snapshot.Date == time.Now().Format("2006-01-02") && len(snapshot.CardIDs) > 0
+		}
 
 		totalSessions, _ := db.CountAllReviewSessions(database)
 		clearedAt, _ := db.GetMilestoneInt(database, "fatigue_cleared_at_count")
@@ -159,7 +168,7 @@ func (h HomeModel) loadStats() tea.Cmd {
 
 		return msgStats{
 			total: len(cards), due: due, overdue: overdue,
-			reviewedToday: reviewedToday, session: session,
+			reviewedToday: reviewedToday, practiceToday: practiceToday, session: session, resumeAvailable: resumeAvailable,
 			notifyFatigue: notifyFatigue, notifyBenchmark: notifyBenchmark,
 		}
 	}
@@ -172,7 +181,9 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.due = msg.due
 		h.overdue = msg.overdue
 		h.reviewedToday = msg.reviewedToday
+		h.practiceToday = msg.practiceToday
 		h.session = msg.session
+		h.resumeAvailable = msg.resumeAvailable
 		h.notifyFatigue = msg.notifyFatigue
 		h.notifyBenchmark = msg.notifyBenchmark
 		h.statsReady = true
@@ -624,6 +635,12 @@ func (h HomeModel) View() string {
 		}
 		b.WriteString("\n")
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Today: %d / %d reviewed   Remaining: %d", h.reviewedToday, dailyReviewLimit, remaining)))
+		if h.practiceToday.Runs > 0 {
+			b.WriteString("\n")
+			b.WriteString(labelStyle.Render(fmt.Sprintf("Standalone today: %d run(s), %d items, %d correct", h.practiceToday.Runs, h.practiceToday.Items, h.practiceToday.Correct)))
+		}
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("Today counts saved review updates. Standalone is tracked separately below."))
 		b.WriteString("\n")
 		check := func(done bool) string {
 			if done {
@@ -633,6 +650,10 @@ func (h HomeModel) View() string {
 		}
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Session: Review [%s] Match [%s] Reverse [%s] Blank [%s]",
 			check(h.session.ReviewDone), check(h.session.MatchDone), check(h.session.ReverseDone), check(h.session.BlankDone))))
+		if h.resumeAvailable {
+			b.WriteString("\n")
+			b.WriteString(labelStyle.Render("Resume available: unfinished Daily Session detected"))
+		}
 	} else {
 		b.WriteString(subtitleStyle.Render("Loading stats..."))
 	}
@@ -726,7 +747,12 @@ func (h HomeModel) View() string {
 			b.WriteString("\n\n")
 		}
 		menu := []string{
-			keyStyle.Render("[d]") + menuItemStyle.Render(" Daily Session"),
+			keyStyle.Render("[d]") + menuItemStyle.Render(func() string {
+				if h.resumeAvailable {
+					return " Resume Daily Session"
+				}
+				return " Daily Session"
+			}()),
 			keyStyle.Render("[p]") + menuItemStyle.Render(" Practice"),
 			keyStyle.Render("[b]") + menuItemStyle.Render(" Benchmark"),
 			keyStyle.Render("[l]") + menuItemStyle.Render(" List cards"),

@@ -77,6 +77,7 @@ type MatchModel struct {
 	sessionMode          bool
 	quitting             bool
 	onComplete           tea.Cmd
+	loggedComplete       bool
 }
 
 func NewMatchModel(database *sql.DB) MatchModel {
@@ -129,6 +130,7 @@ func (m MatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cards := []db.Card(msg)
 		m.totalPairs = len(cards)
+		m.loggedComplete = false
 
 		visible := cards
 		if len(visible) > matchPairCount {
@@ -376,6 +378,18 @@ func (m MatchModel) handleCorrectMatch(leftIdx, rightIdx int) (MatchModel, tea.C
 		if allDone {
 			m.elapsed = time.Since(m.startTime)
 			m.state = matchStateComplete
+			if !m.sessionMode && !m.loggedComplete {
+				m.loggedComplete = true
+				database := m.db
+				startedAt := m.startTime.UTC().Format("2006-01-02 15:04:05")
+				finishedAt := time.Now().UTC().Format("2006-01-02 15:04:05")
+				total := m.totalPairs
+				correct := m.totalPairs - len(m.wrongCardIDs)
+				return m, func() tea.Msg {
+					_ = db.LogPracticeRun(database, "match", startedAt, finishedAt, total, correct)
+					return nil
+				}
+			}
 		}
 	}
 	return m, nil

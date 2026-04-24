@@ -58,6 +58,8 @@ type ReviewModel struct {
 	// response-time tracking
 	reviewSessionID int64     // 0 = do not log
 	shownAt         time.Time // when the current card was displayed
+	startedAt       time.Time
+	loggedComplete  bool
 }
 
 func NewReviewModel(database *sql.DB) ReviewModel {
@@ -160,6 +162,7 @@ func (m ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cards = msg.cards
 		m.reviewed = 0
 		m.index = 0
+		m.loggedComplete = false
 		if msg.reviewedToday > 0 {
 			m.reviewedToday = msg.reviewedToday
 		}
@@ -171,6 +174,7 @@ func (m ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = reviewStateEmpty
 			return m, nil
 		}
+		m.startedAt = time.Now()
 		return m, m.loadChoicesCmd()
 
 	case msgReviewChoicesLoaded:
@@ -190,6 +194,18 @@ func (m ReviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = reviewStateLimitReached
 			} else {
 				m.state = reviewStateSummary
+			}
+			if !m.sessionMode && !m.loggedComplete {
+				m.loggedComplete = true
+				database := m.db
+				startedAt := m.startedAt.UTC().Format("2006-01-02 15:04:05")
+				finishedAt := time.Now().UTC().Format("2006-01-02 15:04:05")
+				total := len(m.cards)
+				correct := len(m.correctIDs)
+				return m, func() tea.Msg {
+					_ = db.LogPracticeRun(database, "review", startedAt, finishedAt, total, correct)
+					return nil
+				}
 			}
 			return m, nil
 		}
