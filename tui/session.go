@@ -246,9 +246,9 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		return m, m.reverseReview.Init()
 	case sessionPhaseBrainDump2:
 		// BrainDump2 runs after ReverseReview. Scores do NOT influence FSRS.
-		// Hints show only the cards NOT recalled in BD1, so the learner focuses on their gaps.
+		// Hints show the first letter of all cards.
 		cards2 := extractCards(m.cards)
-		m.brainDump2 = NewBrainDumpModel(cards2, "Brain Dump 2", firstLetterHints(cards2, m.brainDump1.matched), onComplete)
+		m.brainDump2 = NewBrainDumpModel(cards2, "Brain Dump 2", firstLetterHints(cards2, nil), onComplete)
 		return m, m.brainDump2.Init()
 	case sessionPhaseBlank:
 		cards := extractCards(m.cards)
