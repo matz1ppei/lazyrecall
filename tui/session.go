@@ -11,7 +11,7 @@ import (
 	"github.com/ippei/lazyrecall/ai"
 	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
-	"github.com/ippei/lazyrecall/srs"
+	"github.com/ippei/lazyrecall/debuglog"
 )
 
 type sessionPhase int
@@ -27,6 +27,7 @@ const (
 	sessionPhaseBlank
 	sessionPhaseBrainDump3   // free-recall after Blank
 	sessionPhaseRetryReverse // wrong cards から Reverse Review を1周（FSRS採点後）
+	sessionPhaseScoring      // FSRS採点中; msgMarkDone を待つ
 	sessionPhaseDone
 )
 
@@ -36,9 +37,21 @@ type msgSessionReady struct {
 	cards           []db.CardWithReview
 	reason          string // non-empty when session cannot start (e.g. DB error, no cards)
 	reviewSessionID int64
+	startErr        string // non-empty when StartReviewSession failed (session continues, but review_sessions row missing)
 }
 
 type msgSessionPhaseComplete struct{}
+
+type msgMarkDone struct{}
+
+type msgSessionScored struct {
+	err string
+}
+
+type msgSessionProgressMarked struct {
+	phase string
+	err   string
+}
 
 // SessionModel orchestrates Preview → Review → BrainDump1 → Match → ReverseReview → Blank → BrainDump2 as a daily session.
 type SessionModel struct {
@@ -66,6 +79,9 @@ type SessionModel struct {
 	retryReview       ReverseInputModel
 	retryReviewDone   bool
 	reviewSessionID   int64
+	startErr          string // non-empty when StartReviewSession failed
+	progressErr       string
+	saveErr           string
 	startedAt         time.Time
 	finishedAt        time.Time
 }
@@ -109,8 +125,15 @@ func (m SessionModel) Init() tea.Cmd {
 			filtered = filtered[:sessionCardLimit]
 		}
 		dayNo, _ := db.CountTodayReviewSessions(database)
-		sessionID, _ := db.StartReviewSession(database, "daily_session", dayNo+1)
-		return msgSessionReady{cards: filtered, reviewSessionID: sessionID}
+		sessionID, err := db.StartReviewSession(database, "daily_session", dayNo+1)
+		startErrStr := ""
+		if err != nil {
+			startErrStr = err.Error()
+			debuglog.Errorf("daily_session start failed: %v", err)
+		} else {
+			debuglog.Infof("daily_session started: session_id=%d cards=%d day_no=%d", sessionID, len(filtered), dayNo+1)
+		}
+		return msgSessionReady{cards: filtered, reviewSessionID: sessionID, startErr: startErrStr}
 	}
 }
 
@@ -150,14 +173,45 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if reason == "" {
 				reason = "session ended: no cards"
 			}
+			debuglog.Infof("daily_session could not start: %s", reason)
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome, Reason: "Session could not start: " + reason} }
 		}
 		m.cards = msg.cards
 		m.reviewSessionID = msg.reviewSessionID
+		m.startErr = msg.startErr
 		return m.startPhase(sessionPhasePreview)
 
 	case msgSessionPhaseComplete:
 		return m.advancePhase()
+
+	case msgMarkDone:
+		m.phase = sessionPhaseDone
+		m.finishedAt = time.Now()
+		debuglog.Infof("daily_session completed: session_id=%d reviewed_cards=%d retry_cards=%d", m.reviewSessionID, len(m.cards), len(m.retryCards))
+		return m, nil
+
+	case msgSessionScored:
+		if msg.err != "" {
+			m.saveErr = msg.err
+			m.phase = sessionPhaseDone
+			m.finishedAt = time.Now()
+			debuglog.Errorf("daily_session scoring failed: session_id=%d err=%s", m.reviewSessionID, msg.err)
+			return m, nil
+		}
+		if len(m.retryCards) > 0 {
+			debuglog.Infof("daily_session scoring saved: session_id=%d retry_cards=%d", m.reviewSessionID, len(m.retryCards))
+			return m.startPhase(sessionPhaseRetryReverse)
+		}
+		return m, func() tea.Msg { return msgMarkDone{} }
+
+	case msgSessionProgressMarked:
+		if msg.err != "" {
+			if m.progressErr == "" {
+				m.progressErr = fmt.Sprintf("%s progress save failed: %s", msg.phase, msg.err)
+			}
+			debuglog.Errorf("daily_session progress save failed: phase=%s err=%s", msg.phase, msg.err)
+		}
+		return m, nil
 	}
 
 	// Forward to active sub-model
@@ -210,8 +264,12 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionPhaseDone:
 		if key, ok := msg.(tea.KeyMsg); ok {
 			if key.String() == "enter" || key.String() == "esc" || key.String() == " " {
+				reason := "Session completed"
+				if m.saveErr != "" {
+					reason = "Daily Session save failed. See lazyrecall.log."
+				}
 				return m, func() tea.Msg {
-					return MsgGotoScreen{Target: screenHome, Reason: "Session completed"}
+					return MsgGotoScreen{Target: screenHome, Reason: reason}
 				}
 			}
 		}
@@ -225,9 +283,11 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	switch phase {
 	case sessionPhasePreview:
 		m.startedAt = time.Now()
+		debuglog.Infof("daily_session phase started: preview")
 		m.preview = NewPreviewModel(m.cards, onComplete)
 		return m, m.preview.Init()
 	case sessionPhaseReview:
+		debuglog.Infof("daily_session phase started: review")
 		m.review = NewReviewModelWithCards(m.db, m.cards, m.reviewSessionID, onComplete)
 		return m, m.review.Init()
 	case sessionPhaseBrainDump1:
@@ -235,34 +295,41 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 		// Using extractCards here because BrainDumpModel expects []db.Card (not CardWithReview).
 		// Showing first+last letter hints (e.g. "h__a") lowers initial anxiety while still requiring active recall.
 		cards1 := extractCards(m.cards)
+		debuglog.Infof("daily_session phase started: braindump1")
 		m.brainDump1 = NewBrainDumpModel(cards1, "Brain Dump 1", wordShapeHints(cards1), onComplete)
 		return m, m.brainDump1.Init()
 	case sessionPhaseMatch:
 		cards := extractCards(m.cards)
+		debuglog.Infof("daily_session phase started: match")
 		m.match = NewMatchModelWithCards(m.db, cards, onComplete)
 		return m, m.match.Init()
 	case sessionPhaseReverseReview:
+		debuglog.Infof("daily_session phase started: reverse_review")
 		m.reverseReview = NewReverseInputModelWithCards(m.db, m.cards, onComplete)
 		return m, m.reverseReview.Init()
 	case sessionPhaseBrainDump2:
 		// BrainDump2 runs after ReverseReview. Scores do NOT influence FSRS.
 		// Hints show the first letter of all cards.
 		cards2 := extractCards(m.cards)
+		debuglog.Infof("daily_session phase started: braindump2")
 		m.brainDump2 = NewBrainDumpModel(cards2, "Brain Dump 2", firstLetterHints(cards2, nil), onComplete)
 		return m, m.brainDump2.Init()
 	case sessionPhaseBlank:
 		cards := extractCards(m.cards)
+		debuglog.Infof("daily_session phase started: blank")
 		m.blank = NewBlankModelWithCards(m.db, cards, onComplete)
 		return m, m.blank.Init()
 	case sessionPhaseBrainDump3:
 		// BrainDump3 runs after Blank as the final recall check before FSRS scoring.
 		// Scores here do NOT influence FSRS — only Review/Match/ReverseReview/Blank outcomes do.
 		// No hints: BD3 is pure free recall, measuring retention without scaffolding.
+		debuglog.Infof("daily_session phase started: braindump3")
 		m.brainDump3 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 3", "", onComplete)
 		return m, m.brainDump3.Init()
 	case sessionPhaseRetryReverse:
 		// RetryReverse shows wrong cards one more time. FSRS is already scored, so
 		// this phase is for reinforcement only — results do not affect scheduling.
+		debuglog.Infof("daily_session phase started: retry_reverse cards=%d", len(m.retryCards))
 		m.retryReview = NewReverseInputModelWithCards(m.db, m.retryCards, onComplete)
 		return m, m.retryReview.Init()
 	}
@@ -273,36 +340,57 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 	database := m.db
 	switch m.phase {
 	case sessionPhasePreview:
+		debuglog.Infof("daily_session phase completed: preview")
 		return m.startPhase(sessionPhaseReview)
 
 	case sessionPhaseReview:
 		m.reviewDone = true
 		m.reviewCorrectIDs = m.review.correctIDs
+		debuglog.Infof("daily_session phase completed: review correct=%d/%d", len(m.reviewCorrectIDs), len(m.cards))
 		// MarkReviewDone is called here (before BrainDump1) so that the daily
 		// session progress is recorded regardless of what happens in BrainDump.
-		markCmd := func() tea.Msg { db.MarkReviewDone(database); return nil }
+		markCmd := func() tea.Msg {
+			if err := db.MarkReviewDone(database); err != nil {
+				return msgSessionProgressMarked{phase: "review", err: err.Error()}
+			}
+			return msgSessionProgressMarked{phase: "review"}
+		}
 		m2, initCmd := m.startPhase(sessionPhaseBrainDump1)
 		return m2, tea.Batch(markCmd, initCmd)
 
 	case sessionPhaseBrainDump1:
 		// BrainDump1 result is intentionally ignored for FSRS — advance straight to Match.
+		debuglog.Infof("daily_session phase completed: braindump1 recalled=%d/%d", m.brainDump1.matchCount, m.brainDump1.totalCount)
 		return m.startPhase(sessionPhaseMatch)
 
 	case sessionPhaseMatch:
 		m.matchDone = true
-		markCmd := func() tea.Msg { db.MarkMatchDone(database); return nil }
+		debuglog.Infof("daily_session phase completed: match wrong=%d", len(m.match.wrongCardIDs))
+		markCmd := func() tea.Msg {
+			if err := db.MarkMatchDone(database); err != nil {
+				return msgSessionProgressMarked{phase: "match", err: err.Error()}
+			}
+			return msgSessionProgressMarked{phase: "match"}
+		}
 		m2, initCmd := m.startPhase(sessionPhaseReverseReview)
 		return m2, tea.Batch(markCmd, initCmd)
 
 	case sessionPhaseReverseReview:
 		m.reverseReviewDone = true
 		m.reverseCorrectIDs = m.reverseReview.correctIDs
-		markCmd := func() tea.Msg { db.MarkReverseDone(database); return nil }
+		debuglog.Infof("daily_session phase completed: reverse_review correct=%d/%d", len(m.reverseCorrectIDs), len(m.cards))
+		markCmd := func() tea.Msg {
+			if err := db.MarkReverseDone(database); err != nil {
+				return msgSessionProgressMarked{phase: "reverse", err: err.Error()}
+			}
+			return msgSessionProgressMarked{phase: "reverse"}
+		}
 		m2, initCmd := m.startPhase(sessionPhaseBrainDump2)
 		return m2, tea.Batch(markCmd, initCmd)
 
 	case sessionPhaseBrainDump2:
 		// BrainDump2 result does NOT feed into FSRS — advance to Blank.
+		debuglog.Infof("daily_session phase completed: braindump2 recalled=%d/%d", m.brainDump2.matchCount, m.brainDump2.totalCount)
 		return m.startPhase(sessionPhaseBlank)
 
 	case sessionPhaseBlank:
@@ -310,8 +398,14 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 		if m.blank.state == blankStateEmpty {
 			m.blankSkipped = true
 		}
+		debuglog.Infof("daily_session phase completed: blank correct=%d/%d skipped=%t", len(m.blank.correctIDs), len(m.blank.cards), m.blankSkipped)
 		// MarkBlankDone is called here so daily progress is saved before BrainDump3.
-		markCmd := func() tea.Msg { db.MarkBlankDone(database); return nil }
+		markCmd := func() tea.Msg {
+			if err := db.MarkBlankDone(database); err != nil {
+				return msgSessionProgressMarked{phase: "blank", err: err.Error()}
+			}
+			return msgSessionProgressMarked{phase: "blank"}
+		}
 		m2, initCmd := m.startPhase(sessionPhaseBrainDump3)
 		return m2, tea.Batch(markCmd, initCmd)
 
@@ -338,38 +432,36 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 		}
 		m.retryCards = retryCards
 
-		markCmd := func() tea.Msg {
-			for _, cwr := range cards {
-				card := cwr.Card
-				reviewOK := containsID(reviewCorrectIDs, card.ID)
-				matchOK := !matchWrongIDs[card.ID]
-				reverseOK := containsID(reverseCorrectIDs, card.ID)
-				blankOK := containsID(blankCorrectIDs, card.ID) || card.ExampleTranslation == ""
-				if reviewOK && matchOK && reverseOK && blankOK {
-					markGood(database, card.ID)
-				} else {
-					markAgain(database, card.ID)
-				}
+		results := make([]db.SessionResult, 0, len(cards))
+		for _, cwr := range cards {
+			card := cwr.Card
+			reviewOK := containsID(reviewCorrectIDs, card.ID)
+			matchOK := !matchWrongIDs[card.ID]
+			reverseOK := containsID(reverseCorrectIDs, card.ID)
+			blankOK := containsID(blankCorrectIDs, card.ID) || card.ExampleTranslation == ""
+			rating := 0
+			if reviewOK && matchOK && reverseOK && blankOK {
+				rating = 4
 			}
-			return nil
+			results = append(results, db.SessionResult{CardID: card.ID, Rating: rating})
 		}
 
-		endCmd := m.endReviewSessionCmd()
-		if len(retryCards) > 0 {
-			// Run FSRS scoring in background, then start RetryReverse.
-			m2, initCmd := m.startPhase(sessionPhaseRetryReverse)
-			return m2, tea.Batch(markCmd, initCmd, endCmd)
+		debuglog.Infof("daily_session phase completed: braindump3 recalled=%d/%d; saving_results cards=%d retry_cards=%d", m.brainDump3.matchCount, m.brainDump3.totalCount, len(results), len(retryCards))
+
+		sid := m.reviewSessionID
+		saveCmd := func() tea.Msg {
+			if err := db.ApplySessionResults(database, results, sid); err != nil {
+				return msgSessionScored{err: err.Error()}
+			}
+			return msgSessionScored{}
 		}
-		// No wrong cards — go straight to Done.
-		m.phase = sessionPhaseDone
-		m.finishedAt = time.Now()
-		return m, tea.Batch(markCmd, endCmd)
+		m.phase = sessionPhaseScoring
+		return m, saveCmd
 
 	case sessionPhaseRetryReverse:
 		m.retryReviewDone = true
-		m.phase = sessionPhaseDone
-		m.finishedAt = time.Now()
-		return m, nil
+		debuglog.Infof("daily_session phase completed: retry_reverse correct=%d/%d", len(m.retryReview.correctIDs), len(m.retryCards))
+		return m, func() tea.Msg { return msgMarkDone{} }
 	}
 	return m, nil
 }
@@ -381,45 +473,6 @@ func containsID(ids []int64, target int64) bool {
 		}
 	}
 	return false
-}
-
-// markAgain applies FSRS Again for a card that was not triple-correct.
-// This lowers stability, increments lapses, and schedules a short re-learning interval.
-func (m SessionModel) endReviewSessionCmd() tea.Cmd {
-	if m.reviewSessionID == 0 {
-		return nil
-	}
-	database := m.db
-	sid := m.reviewSessionID
-	return func() tea.Msg {
-		_ = db.EndReviewSession(database, sid)
-		return nil
-	}
-}
-
-func markAgain(database *sql.DB, cardID int64) {
-	r, err := db.GetOrCreateReview(database, cardID)
-	if err != nil {
-		return
-	}
-	result := srs.Schedule(db.ReviewToSRS(r), srs.RatingAgain, time.Now())
-	db.ApplySRSResult(&r, result)
-	rating := 0
-	r.LastRating = &rating
-	db.UpdateReview(database, r)
-}
-
-// markGood applies FSRS Good for a triple-correct card, advancing its interval.
-func markGood(database *sql.DB, cardID int64) {
-	r, err := db.GetOrCreateReview(database, cardID)
-	if err != nil {
-		return
-	}
-	result := srs.Schedule(db.ReviewToSRS(r), srs.RatingGood, time.Now())
-	db.ApplySRSResult(&r, result)
-	rating := 4
-	r.LastRating = &rating
-	db.UpdateReview(database, r)
 }
 
 func extractCards(cwrs []db.CardWithReview) []db.Card {
@@ -462,6 +515,8 @@ func (m SessionModel) View() string {
 		return m.brainDump3.View()
 	case sessionPhaseRetryReverse:
 		return m.retryReview.View()
+	case sessionPhaseScoring:
+		return titleStyle.Render("Daily Session") + "\n\n" + subtitleStyle.Render("Saving results...")
 	case sessionPhaseDone:
 		return m.viewDone()
 	}
@@ -509,6 +564,8 @@ func (m SessionModel) viewDone() string {
 	switch {
 	case len(m.cards) == 0:
 		b.WriteString(subtitleStyle.Render("No cards yet. Add some cards first!"))
+	case m.saveErr != "":
+		b.WriteString(errorStyle.Render("Session finished, but final results were not saved."))
 	case allDone:
 		b.WriteString(successStyle.Render(fmt.Sprintf("Goal achieved! All %d cards covered.", len(m.cards))))
 	case anyDone:
@@ -534,6 +591,20 @@ func (m SessionModel) viewDone() string {
 		secs := int(elapsed.Seconds()) % 60
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Time: %dm %02ds", mins, secs)))
 		b.WriteString("\n\n")
+	}
+	if m.startErr != "" {
+		b.WriteString(helpStyle.Render("⚠ session log error: " + m.startErr))
+		b.WriteString("\n")
+	}
+	if m.progressErr != "" {
+		b.WriteString(errorStyle.Render("Progress warning: " + m.progressErr))
+		b.WriteString("\n")
+	}
+	if m.saveErr != "" {
+		b.WriteString(errorStyle.Render("Save error: " + m.saveErr))
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("See lazyrecall.log for details."))
+		b.WriteString("\n")
 	}
 	b.WriteString(helpStyle.Render("[enter] back to home"))
 	return b.String()

@@ -222,11 +222,56 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 	// today's reviewed and correct count
 	err = db.QueryRow(`
 		SELECT
-			COUNT(*),
-			COALESCE(SUM(CASE WHEN last_rating = 4 THEN 1 ELSE 0 END), 0)
-		FROM reviews
-		WHERE date(reviewed_at) = date('now', 'localtime')
-	`).Scan(&s.ReviewedToday, &s.CorrectToday)
+			COALESCE((
+				SELECT COUNT(*)
+				FROM reviews r
+				WHERE date(r.reviewed_at) = date('now', 'localtime')
+				  AND NOT EXISTS (
+					SELECT 1
+					FROM review_events re
+					JOIN review_sessions rs ON rs.id = re.review_session_id
+					WHERE rs.ended_at IS NOT NULL
+					  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+					  AND re.card_id = r.card_id
+				  )
+			), 0)
+			+
+			COALESCE((
+				SELECT COUNT(*)
+				FROM review_events re
+				JOIN review_sessions rs ON rs.id = re.review_session_id
+				WHERE rs.ended_at IS NOT NULL
+				  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+			), 0)
+	`).Scan(&s.ReviewedToday)
+	if err != nil {
+		return s, err
+	}
+
+	err = db.QueryRow(`
+		SELECT
+			COALESCE((
+				SELECT SUM(CASE WHEN r.last_rating = 4 THEN 1 ELSE 0 END)
+				FROM reviews r
+				WHERE date(r.reviewed_at) = date('now', 'localtime')
+				  AND NOT EXISTS (
+					SELECT 1
+					FROM review_events re
+					JOIN review_sessions rs ON rs.id = re.review_session_id
+					WHERE rs.ended_at IS NOT NULL
+					  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+					  AND re.card_id = r.card_id
+				  )
+			), 0)
+			+
+			COALESCE((
+				SELECT SUM(CASE WHEN re.correct = 1 THEN 1 ELSE 0 END)
+				FROM review_events re
+				JOIN review_sessions rs ON rs.id = re.review_session_id
+				WHERE rs.ended_at IS NOT NULL
+				  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+			), 0)
+	`).Scan(&s.CorrectToday)
 	if err != nil {
 		return s, err
 	}
@@ -284,7 +329,30 @@ func calcStreak(dates []string) int {
 
 func CountReviewedToday(db *sql.DB) (int, error) {
 	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE date(reviewed_at) = date('now', 'localtime')`).Scan(&n)
+	err := db.QueryRow(`
+		SELECT
+			COALESCE((
+				SELECT COUNT(*)
+				FROM reviews r
+				WHERE date(r.reviewed_at) = date('now', 'localtime')
+				  AND NOT EXISTS (
+					SELECT 1
+					FROM review_events re
+					JOIN review_sessions rs ON rs.id = re.review_session_id
+					WHERE rs.ended_at IS NOT NULL
+					  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+					  AND re.card_id = r.card_id
+				  )
+			), 0)
+			+
+			COALESCE((
+				SELECT COUNT(*)
+				FROM review_events re
+				JOIN review_sessions rs ON rs.id = re.review_session_id
+				WHERE rs.ended_at IS NOT NULL
+				  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+			), 0)
+	`).Scan(&n)
 	return n, err
 }
 

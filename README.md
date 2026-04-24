@@ -149,7 +149,7 @@ lazyrecall/
 
 | 表示 | 条件 |
 |---|---|
-| Today: N reviewed | `reviewed_at` が今日の日付のカード数 |
+| Today: N reviewed | 完了した Daily Session の `review_events` 件数 + それ以外で `reviewed_at` が今日の日付のカード数 |
 | New Cards | `reviewed_at IS NULL`（一度もレビューされていない） |
 | Learning Cards | `reviewed_at IS NOT NULL` かつ `stability < 21` |
 | Mature Cards | `stability >= 21` |
