@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -31,20 +32,20 @@ func LoadExcludedWords() (map[string]bool, error) {
 // AppendExcludedWord は word（小文字化）を exclude.txt に1行追記する。
 // ファイル・ディレクトリが存在しない場合は自動作成する。
 func AppendExcludedWord(word string) error {
+	return setExcludedWordAtPathFromUserConfig(word, true)
+}
+
+// SetExcludedWord turns exclusion for word on or off.
+func SetExcludedWord(word string, excluded bool) error {
+	return setExcludedWordAtPathFromUserConfig(word, excluded)
+}
+
+func setExcludedWordAtPathFromUserConfig(word string, excluded bool) error {
 	path, err := ExclusionsPath()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, "%s\n", strings.ToLower(word))
-	return err
+	return setExcludedWordAtPath(path, word, excluded)
 }
 
 func loadExcludedWordsFromPath(path string) (map[string]bool, error) {
@@ -67,4 +68,52 @@ func loadExcludedWordsFromPath(path string) (map[string]bool, error) {
 		result[strings.ToLower(line)] = true
 	}
 	return result, sc.Err()
+}
+
+func setExcludedWordAtPath(path, word string, excluded bool) error {
+	normalized := strings.ToLower(strings.TrimSpace(word))
+	if normalized == "" {
+		return nil
+	}
+
+	existing, err := loadExcludedWordsFromPath(path)
+	if err != nil {
+		return err
+	}
+
+	if excluded {
+		existing[normalized] = true
+	} else {
+		delete(existing, normalized)
+	}
+
+	if len(existing) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	words := make([]string, 0, len(existing))
+	for word := range existing {
+		words = append(words, word)
+	}
+	slices.Sort(words)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for _, word := range words {
+		if _, err := fmt.Fprintf(f, "%s\n", word); err != nil {
+			return err
+		}
+	}
+	return nil
 }

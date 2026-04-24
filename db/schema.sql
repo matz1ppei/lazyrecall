@@ -45,3 +45,12 @@ CREATE TABLE IF NOT EXISTS reviews (
     lapses       INTEGER NOT NULL DEFAULT 0,
     last_review  DATETIME
 );
+
+CREATE TABLE IF NOT EXISTS practice_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    mode        TEXT     NOT NULL,
+    started_at  DATETIME NOT NULL,
+    finished_at DATETIME NOT NULL,
+    total       INTEGER  NOT NULL,
+    correct     INTEGER  NOT NULL
+);

@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,25 +42,50 @@ type msgEditGenerated struct {
 
 type msgExcludedWords struct{ excluded map[string]bool }
 
+type listSortMode int
+
+const (
+	listSortNewest listSortMode = iota
+	listSortDue
+	listSortFront
+	listSortExcluded
+)
+
 type ListModel struct {
-	db              *sql.DB
-	ai              ai.Client
-	state           listState
-	cards           []db.CardWithReview
-	excluded        map[string]bool
-	cursor          int
-	offset          int
-	errMsg          string
-	editInputs      [4]textinput.Model // front, back, hint, example
-	editFocus       int
-	editLoading     bool
-	editTranslation string
+	db                *sql.DB
+	ai                ai.Client
+	state             listState
+	cards             []db.CardWithReview
+	excluded          map[string]bool
+	cursor            int
+	offset            int
+	errMsg            string
+	editInputs        [6]textinput.Model // front, back, hint, example, example translation, example word
+	editFocus         int
+	editLoading       bool
+	editOriginalFront string
+	editExcluded      bool
+	filterInput       textinput.Model
+	filterActive      bool
+	filterExcluded    bool
+	filterDueOnly     bool
+	sortMode          listSortMode
 }
 
 const listPageSize = 15
 
 func NewListModel(database *sql.DB, aiClient ai.Client) ListModel {
-	return ListModel{db: database, ai: aiClient, state: listStateLoading}
+	filterInput := textinput.New()
+	filterInput.Placeholder = "Search front/back"
+	filterInput.CharLimit = 128
+	filterInput.Width = 24
+	return ListModel{
+		db:          database,
+		ai:          aiClient,
+		state:       listStateLoading,
+		filterInput: filterInput,
+		sortMode:    listSortNewest,
+	}
 }
 
 func loadExcludedCmd() tea.Cmd {
@@ -102,6 +129,7 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.state = listStateNormal
 		}
+		m.clampListPosition()
 		return m, nil
 
 	case msgDeleteDone:
@@ -118,10 +146,11 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = listStateNormal
 			return m, nil
 		}
-		return m, m.reloadCmd()
+		return m, tea.Batch(m.reloadCmd(), loadExcludedCmd())
 
 	case msgExcludedWords:
 		m.excluded = msg.excluded
+		m.clampListPosition()
 		return m, nil
 
 	case msgExcludeDone:
@@ -138,7 +167,7 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.editInputs[m.editFocus].SetValue(msg.text)
 			if msg.translation != "" {
-				m.editTranslation = msg.translation
+				m.editInputs[4].SetValue(msg.translation)
 			}
 		}
 		return m, nil
@@ -157,8 +186,8 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *ListModel) initEditInputs(card db.CardWithReview) {
-	labels := []string{"Front", "Back", "Hint", "Example"}
-	values := []string{card.Front, card.Back, card.Hint, card.Example}
+	labels := []string{"Front", "Back", "Hint", "Example", "Example Translation", "Example Word"}
+	values := []string{card.Front, card.Back, card.Hint, card.Example, card.Card.ExampleTranslation, card.Card.ExampleWord}
 	for i := range m.editInputs {
 		ti := textinput.New()
 		ti.Placeholder = labels[i]
@@ -168,7 +197,107 @@ func (m *ListModel) initEditInputs(card db.CardWithReview) {
 	}
 	m.editFocus = 0
 	m.editInputs[0].Focus()
-	m.editTranslation = card.Card.ExampleTranslation
+	m.editOriginalFront = card.Front
+	m.editExcluded = m.excluded[strings.ToLower(card.Front)]
+}
+
+func (m ListModel) filteredCardIndices() []int {
+	indices := make([]int, 0, len(m.cards))
+	query := strings.ToLower(strings.TrimSpace(m.filterInput.Value()))
+	today := time.Now().Format("2006-01-02")
+	for i, card := range m.cards {
+		if query != "" {
+			front := strings.ToLower(card.Front)
+			back := strings.ToLower(card.Back)
+			if !strings.Contains(front, query) && !strings.Contains(back, query) {
+				continue
+			}
+		}
+		if m.filterExcluded && !m.excluded[strings.ToLower(card.Front)] {
+			continue
+		}
+		if m.filterDueOnly && (card.Review.DueDate == "" || card.Review.DueDate > today) {
+			continue
+		}
+		indices = append(indices, i)
+	}
+	sort.SliceStable(indices, func(i, j int) bool {
+		left := m.cards[indices[i]]
+		right := m.cards[indices[j]]
+		switch m.sortMode {
+		case listSortFront:
+			if strings.ToLower(left.Front) != strings.ToLower(right.Front) {
+				return strings.ToLower(left.Front) < strings.ToLower(right.Front)
+			}
+		case listSortNewest:
+			if !left.Card.CreatedAt.Equal(right.Card.CreatedAt) {
+				return left.Card.CreatedAt.After(right.Card.CreatedAt)
+			}
+		case listSortExcluded:
+			leftExcluded := m.excluded[strings.ToLower(left.Front)]
+			rightExcluded := m.excluded[strings.ToLower(right.Front)]
+			if leftExcluded != rightExcluded {
+				return leftExcluded
+			}
+			if strings.ToLower(left.Front) != strings.ToLower(right.Front) {
+				return strings.ToLower(left.Front) < strings.ToLower(right.Front)
+			}
+		default:
+			if left.Review.DueDate != right.Review.DueDate {
+				return left.Review.DueDate < right.Review.DueDate
+			}
+		}
+		return left.Card.ID < right.Card.ID
+	})
+	return indices
+}
+
+func (m *ListModel) cycleSortMode() {
+	m.sortMode = (m.sortMode + 1) % 4
+	m.cursor = 0
+	m.offset = 0
+	m.clampListPosition()
+}
+
+func (m ListModel) sortModeLabel() string {
+	switch m.sortMode {
+	case listSortFront:
+		return "front"
+	case listSortNewest:
+		return "new"
+	case listSortExcluded:
+		return "excluded"
+	default:
+		return "due"
+	}
+}
+
+func (m *ListModel) clampListPosition() {
+	total := len(m.filteredCardIndices())
+	if total == 0 {
+		m.cursor = 0
+		m.offset = 0
+		return
+	}
+	if m.cursor >= total {
+		m.cursor = total - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	if m.offset > m.cursor {
+		m.offset = m.cursor
+	}
+	maxOffset := total - listPageSize
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.offset > maxOffset {
+		m.offset = maxOffset
+	}
+	if m.cursor >= m.offset+listPageSize {
+		m.offset = m.cursor - listPageSize + 1
+	}
 }
 
 func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -179,10 +308,47 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case listStateNormal:
-		total := len(m.cards)
+		filtered := m.filteredCardIndices()
+		total := len(filtered)
+		if m.filterActive {
+			switch msg.String() {
+			case "esc":
+				m.filterActive = false
+				m.filterInput.Blur()
+				return m, nil
+			case "enter":
+				m.filterActive = false
+				m.filterInput.Blur()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.filterInput, cmd = m.filterInput.Update(msg)
+				m.clampListPosition()
+				return m, cmd
+			}
+		}
 		switch msg.String() {
 		case "esc", "q":
 			return m, func() tea.Msg { return MsgGotoScreen{Target: screenHome} }
+		case "/", "ctrl+f":
+			m.filterActive = true
+			m.errMsg = ""
+			return m, m.filterInput.Focus()
+		case "o":
+			m.filterExcluded = !m.filterExcluded
+			m.clampListPosition()
+		case "u":
+			m.filterDueOnly = !m.filterDueOnly
+			m.clampListPosition()
+		case "c":
+			m.filterInput.SetValue("")
+			m.filterExcluded = false
+			m.filterDueOnly = false
+			m.filterActive = false
+			m.filterInput.Blur()
+			m.clampListPosition()
+		case "s":
+			m.cycleSortMode()
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
@@ -212,14 +378,23 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cursor = m.offset
 			}
 		case "e", "enter":
-			m.initEditInputs(m.cards[m.cursor])
+			if total == 0 {
+				return m, nil
+			}
+			m.initEditInputs(m.cards[filtered[m.cursor]])
 			m.state = listStateEdit
 			m.errMsg = ""
 			return m, textinput.Blink
 		case "d":
+			if total == 0 {
+				return m, nil
+			}
 			m.state = listStateConfirmDelete
 			m.errMsg = ""
 		case "x":
+			if total == 0 {
+				return m, nil
+			}
 			m.state = listStateConfirmExclude
 			m.errMsg = ""
 		}
@@ -227,7 +402,12 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case listStateConfirmExclude:
 		switch msg.String() {
 		case "y", "enter":
-			word := m.cards[m.cursor].Front
+			filtered := m.filteredCardIndices()
+			if len(filtered) == 0 {
+				m.state = listStateNormal
+				return m, nil
+			}
+			word := m.cards[filtered[m.cursor]].Front
 			return m, func() tea.Msg {
 				err := config.AppendExcludedWord(word)
 				return msgExcludeDone{err: err}
@@ -239,9 +419,14 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case listStateConfirmDelete:
 		switch msg.String() {
 		case "y", "enter":
-			card := m.cards[m.cursor]
+			filtered := m.filteredCardIndices()
+			if len(filtered) == 0 {
+				m.state = listStateNormal
+				return m, nil
+			}
+			card := m.cards[filtered[m.cursor]]
 			database := m.db
-			if m.cursor > 0 && m.cursor >= len(m.cards)-1 {
+			if m.cursor > 0 && m.cursor >= len(filtered)-1 {
 				m.cursor--
 				if m.offset > 0 {
 					m.offset--
@@ -263,11 +448,11 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "tab", "down":
 			m.editInputs[m.editFocus].Blur()
-			m.editFocus = (m.editFocus + 1) % 4
+			m.editFocus = (m.editFocus + 1) % len(m.editInputs)
 			return m, m.editInputs[m.editFocus].Focus()
 		case "shift+tab", "up":
 			m.editInputs[m.editFocus].Blur()
-			m.editFocus = (m.editFocus + 3) % 4
+			m.editFocus = (m.editFocus + len(m.editInputs) - 1) % len(m.editInputs)
 			return m, m.editInputs[m.editFocus].Focus()
 		case "ctrl+g":
 			// AI generate for Hint (index 2) or Example (index 3)
@@ -287,30 +472,52 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "ctrl+s", "enter":
-			if m.editFocus < 3 {
+			if m.editFocus < len(m.editInputs)-1 {
 				// Tab to next field on enter (except last)
 				m.editInputs[m.editFocus].Blur()
 				m.editFocus++
 				return m, m.editInputs[m.editFocus].Focus()
 			}
 			// Save on enter at last field
-			card := m.cards[m.cursor]
+			filtered := m.filteredCardIndices()
+			if len(filtered) == 0 {
+				m.state = listStateNormal
+				return m, nil
+			}
+			card := m.cards[filtered[m.cursor]]
 			front := strings.TrimSpace(m.editInputs[0].Value())
 			back := strings.TrimSpace(m.editInputs[1].Value())
 			hint := strings.TrimSpace(m.editInputs[2].Value())
 			example := strings.TrimSpace(m.editInputs[3].Value())
+			exampleTranslation := strings.TrimSpace(m.editInputs[4].Value())
+			exampleWord := strings.TrimSpace(m.editInputs[5].Value())
 			if front == "" || back == "" {
 				m.errMsg = "Front and Back cannot be empty"
 				return m, nil
 			}
 			database := m.db
 			id := card.Card.ID
-			editTranslation := m.editTranslation
+			originalFront := m.editOriginalFront
+			editExcluded := m.editExcluded
 			m.state = listStateLoading
 			return m, func() tea.Msg {
-				err := db.UpdateCard(database, id, front, back, hint, example, editTranslation, "")
+				err := db.UpdateCard(database, id, front, back, hint, example, exampleTranslation, exampleWord)
+				if err != nil {
+					return msgUpdateDone{err: err}
+				}
+				if err := config.SetExcludedWord(originalFront, false); err != nil {
+					return msgUpdateDone{err: err}
+				}
+				if editExcluded {
+					if err := config.SetExcludedWord(front, true); err != nil {
+						return msgUpdateDone{err: err}
+					}
+				}
 				return msgUpdateDone{err: err}
 			}
+		case "ctrl+x":
+			m.editExcluded = !m.editExcluded
+			return m, nil
 		default:
 			var cmd tea.Cmd
 			m.editInputs[m.editFocus], cmd = m.editInputs[m.editFocus].Update(msg)
@@ -344,11 +551,18 @@ func (m ListModel) View() string {
 		b.WriteString(helpStyle.Render("[esc] back"))
 
 	case listStateEdit:
-		card := m.cards[m.cursor]
+		filtered := m.filteredCardIndices()
+		if len(filtered) == 0 {
+			b.WriteString(subtitleStyle.Render("No cards match the current filter."))
+			b.WriteString("\n\n")
+			b.WriteString(helpStyle.Render("[esc] back"))
+			break
+		}
+		card := m.cards[filtered[m.cursor]]
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Editing card #%d", card.Card.ID)))
 		b.WriteString("\n\n")
 
-		fieldNames := []string{"Front", "Back", "Hint", "Example"}
+		fieldNames := []string{"Front", "Back", "Hint", "Example", "Example Translation", "Example Word"}
 		for i, name := range fieldNames {
 			if i == m.editFocus {
 				b.WriteString(inputLabelStyle.Render(name + ":"))
@@ -368,14 +582,28 @@ func (m ListModel) View() string {
 		}
 
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("[tab/↑↓] move  [enter] next/save  [ctrl+s] save  [esc] cancel"))
+		excludeLabel := "Off"
+		if m.editExcluded {
+			excludeLabel = "On"
+		}
+		b.WriteString(labelStyle.Render("Excluded: " + excludeLabel))
+		b.WriteString("\n\n")
+		b.WriteString(helpStyle.Render("[tab/↑↓] move  [enter] next/save  [ctrl+s] save  [ctrl+x] toggle exclude  [esc] cancel"))
 		if m.errMsg != "" {
 			b.WriteString("\n" + errorStyle.Render(m.errMsg))
 		}
 
 	case listStateNormal, listStateConfirmDelete, listStateConfirmExclude:
-		total := len(m.cards)
-		b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards total", total)))
+		filtered := m.filteredCardIndices()
+		total := len(filtered)
+		b.WriteString(labelStyle.Render(fmt.Sprintf("%d cards shown / %d total", total, len(m.cards))))
+		b.WriteString("\n\n")
+		b.WriteString(labelStyle.Render(fmt.Sprintf("Search: %q  Excluded only: %t  Due only: %t  Sort: %s", m.filterInput.Value(), m.filterExcluded, m.filterDueOnly, m.sortModeLabel())))
+		if m.filterActive {
+			b.WriteString("  " + helpStyle.Render("(typing)"))
+		}
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("[/] search  [o] excluded only  [u] due only  [s] sort  [c] clear filters"))
 		b.WriteString("\n\n")
 
 		b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-3s %-12s %-20s %-45s %s", "ID", " x", "Front", "Back", "Example", "Due")))
@@ -386,7 +614,7 @@ func (m ListModel) View() string {
 			end = total
 		}
 		for i := m.offset; i < end; i++ {
-			c := m.cards[i]
+			c := m.cards[filtered[i]]
 			mark := "   "
 			if m.excluded[strings.ToLower(c.Front)] {
 				mark = "[x]"
@@ -406,6 +634,10 @@ func (m ListModel) View() string {
 			}
 			b.WriteString("\n")
 		}
+		if total == 0 {
+			b.WriteString(subtitleStyle.Render("No cards match the current filters."))
+			b.WriteString("\n")
+		}
 
 		if total > listPageSize {
 			b.WriteString(helpStyle.Render(fmt.Sprintf("(%d-%d / %d)", m.offset+1, end, total)))
@@ -415,11 +647,11 @@ func (m ListModel) View() string {
 		b.WriteString("\n")
 		switch m.state {
 		case listStateConfirmDelete:
-			card := m.cards[m.cursor]
+			card := m.cards[filtered[m.cursor]]
 			b.WriteString(errorStyle.Render(fmt.Sprintf("Delete \"%s\"? ", truncate(card.Front, 30))))
 			b.WriteString(helpStyle.Render("[y/enter] yes  [n/esc] no"))
 		case listStateConfirmExclude:
-			card := m.cards[m.cursor]
+			card := m.cards[filtered[m.cursor]]
 			b.WriteString(subtitleStyle.Render(fmt.Sprintf("Add \"%s\" to exclusion list? ", truncate(card.Front, 30))))
 			b.WriteString(helpStyle.Render("[y/enter] yes  [n/esc] no"))
 		default:

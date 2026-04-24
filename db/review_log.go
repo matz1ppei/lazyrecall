@@ -39,6 +39,11 @@ func InsertReviewEvent(database *sql.DB, sessionID, cardID int64, position int, 
 	return err
 }
 
+func DeleteReviewEventsForSession(database *sql.DB, sessionID int64) error {
+	_, err := database.Exec(`DELETE FROM review_events WHERE review_session_id = ?`, sessionID)
+	return err
+}
+
 // CountTodayReviewSessions returns the number of review_sessions that started today.
 // Used to compute day_session_no for the next session.
 func CountTodayReviewSessions(database *sql.DB) (int, error) {

@@ -81,5 +81,13 @@ func Open(path string) (*sql.DB, error) {
 		int_value  INTEGER NOT NULL DEFAULT 0,
 		text_value TEXT    NOT NULL DEFAULT ''
 	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS practice_runs (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		mode        TEXT     NOT NULL,
+		started_at  DATETIME NOT NULL,
+		finished_at DATETIME NOT NULL,
+		total       INTEGER  NOT NULL,
+		correct     INTEGER  NOT NULL
+	)`)
 	return db, nil
 }

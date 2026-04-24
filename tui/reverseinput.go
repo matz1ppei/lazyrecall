@@ -48,6 +48,8 @@ type ReverseInputModel struct {
 	sessionMode    bool
 	quitting       bool
 	onComplete     tea.Cmd
+	startedAt      time.Time
+	loggedComplete bool
 }
 
 func NewReverseInputModel(database *sql.DB) ReverseInputModel {
@@ -102,10 +104,12 @@ func (m ReverseInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cards = msg.cards
 		m.index = 0
 		m.correct = 0
+		m.loggedComplete = false
 		if len(m.cards) == 0 {
 			m.state = reverseInputEmpty
 			return m, nil
 		}
+		m.startedAt = time.Now()
 		m.state = reverseInputQuestion
 		m.input.Reset()
 		return m, m.input.Focus()
@@ -114,6 +118,18 @@ func (m ReverseInputModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.index++
 		if m.index >= len(m.cards) {
 			m.state = reverseInputSummary
+			if !m.sessionMode && !m.loggedComplete {
+				m.loggedComplete = true
+				database := m.db
+				startedAt := m.startedAt.UTC().Format("2006-01-02 15:04:05")
+				finishedAt := time.Now().UTC().Format("2006-01-02 15:04:05")
+				total := len(m.cards)
+				correct := m.correct
+				return m, func() tea.Msg {
+					_ = db.LogPracticeRun(database, "reverse_review", startedAt, finishedAt, total, correct)
+					return nil
+				}
+			}
 			return m, nil
 		}
 		m.state = reverseInputQuestion

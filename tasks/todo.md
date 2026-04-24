@@ -14,6 +14,27 @@
 - [x] Fix `Today` aggregation to count completed session events by completion day
 - [x] Add regression tests for sessions that cross midnight
 - [x] Run the relevant test suite and review results
+- [x] Add exclude toggle support to the card edit screen
+- [x] Add config helpers and tests for turning exclusions off as well as on
+- [x] Add UI regression tests for edit-screen exclude toggling
+- [x] Run the relevant test suite and review results
+- [x] Add search and filter controls to the card list screen
+- [x] Support front/back substring search plus excluded-only and due-only toggles
+- [x] Add UI regression tests for card list filtering
+- [x] Run the relevant test suite and review results
+- [x] Add persisted Daily Session snapshot support for phase-boundary resume
+- [x] Resume Daily Session from the first unfinished phase using the saved card set
+- [x] Clear stale/completed session snapshots automatically
+- [x] Add regression tests for Daily Session resume flow
+- [x] Run the relevant test suite and review results
+- [x] Add standalone practice run logging for completed Review/Reverse/Match/Blank sessions
+- [x] Show standalone practice activity and clarify metric definitions in Home/Stats
+- [x] Add regression tests for standalone practice logging and stats loading
+- [x] Run the relevant test suite and review results
+- [x] Add list-card sort modes that work with the current search/filter flow
+- [x] Expand card edit to include example translation and example word
+- [x] Add regression tests for list sorting and expanded edit saves
+- [x] Run the relevant test suite and review results
 
 ## Review
 
@@ -24,4 +45,11 @@
 - AI-disabled hardening: Setup now offers manual card creation instead of crashing, and Compose is blocked both at entry and in-model when AI is unavailable.
 - Card integrity: Add / Fetch / CSV import now create the card and initial review row atomically, so new cards cannot become invisible to due-based study flows.
 - Today aggregation: completed Daily Session events now count toward the day the session ended, so sessions that cross midnight no longer land on the previous day.
+- List edit exclusions: the edit screen now exposes `Excluded: On/Off`, and saving keeps `exclude.txt` in sync even when the card front text changes.
+- Card list filtering: `List cards` now supports live front/back search plus `excluded only` and `due only` toggles without leaving the screen.
+- Daily Session resume: unfinished sessions now resume from the current phase boundary using the same saved card set, and completed/stale snapshots are cleared automatically.
+- Metric clarity: Home and Stats now explain that `Today` tracks saved review updates, while standalone practice is shown separately.
+- Standalone visibility: completed Review/Reverse/Match/Blank runs now show up as standalone practice totals and recent run history.
+- Card list sorting: `List cards` now cycles through due/front/new/excluded sorting while preserving the current search/filter flow.
+- Expanded editing: card edit now includes `example_translation` and `example_word`, so Blank/Compose support text can be tuned directly.
 - Verification: `go test ./...`

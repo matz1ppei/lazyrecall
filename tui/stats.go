@@ -12,6 +12,8 @@ import (
 
 type msgStatsLoaded struct {
 	stats       db.ReviewStats
+	practice    db.PracticeTodayStats
+	recentRuns  []db.PracticeRun
 	recentDates map[string]bool
 	err         error
 }
@@ -19,6 +21,8 @@ type msgStatsLoaded struct {
 type StatsModel struct {
 	db          *sql.DB
 	stats       db.ReviewStats
+	practice    db.PracticeTodayStats
+	recentRuns  []db.PracticeRun
 	recentDates map[string]bool
 	ready       bool
 	err         string
@@ -35,8 +39,16 @@ func (m StatsModel) Init() tea.Cmd {
 		if err != nil {
 			return msgStatsLoaded{err: err}
 		}
+		practice, err := db.GetTodayPracticeStats(database)
+		if err != nil {
+			return msgStatsLoaded{err: err}
+		}
+		runs, err := db.ListRecentPracticeRuns(database, 5)
+		if err != nil {
+			return msgStatsLoaded{err: err}
+		}
 		dates, err := db.GetRecentSessionDates(database, 28)
-		return msgStatsLoaded{stats: s, recentDates: dates, err: err}
+		return msgStatsLoaded{stats: s, practice: practice, recentRuns: runs, recentDates: dates, err: err}
 	}
 }
 
@@ -47,6 +59,8 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 		} else {
 			m.stats = msg.stats
+			m.practice = msg.practice
+			m.recentRuns = msg.recentRuns
 			m.recentDates = msg.recentDates
 			m.ready = true
 		}
@@ -113,10 +127,49 @@ func (m StatsModel) View() string {
 	}
 	b.WriteString(labelStyle.Render(fmt.Sprintf("  Reviewed: %d / %d%s",
 		s.ReviewedToday, dailyReviewLimit, correctRate)))
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("  Daily Session and saved review updates count here."))
+	b.WriteString("\n")
+	b.WriteString(labelStyle.Render(fmt.Sprintf("  Standalone practice: %d run(s), %d items, %d correct",
+		m.practice.Runs, m.practice.Items, m.practice.Correct)))
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("  Standalone practice does not change FSRS or reviewed_at."))
+	b.WriteString("\n\n")
+
+	b.WriteString(subtitleStyle.Render("Recent Standalone Practice"))
+	b.WriteString("\n")
+	if len(m.recentRuns) == 0 {
+		b.WriteString(helpStyle.Render("  No standalone practice runs yet."))
+	} else {
+		for _, run := range m.recentRuns {
+			when := run.FinishedAt
+			if t, err := time.Parse("2006-01-02 15:04:05", run.FinishedAt); err == nil {
+				when = t.Format("01-02 15:04")
+			}
+			b.WriteString(labelStyle.Render(fmt.Sprintf("  %s  %s  %d / %d",
+				when, formatPracticeMode(run.Mode), run.Correct, run.Total)))
+			b.WriteString("\n")
+		}
+	}
 	b.WriteString("\n\n")
 
 	b.WriteString(helpStyle.Render("[esc] back"))
 	return b.String()
+}
+
+func formatPracticeMode(mode string) string {
+	switch mode {
+	case "review":
+		return "Review"
+	case "reverse_review":
+		return "Reverse"
+	case "match":
+		return "Match"
+	case "blank":
+		return "Blank"
+	default:
+		return mode
+	}
 }
 
 // renderCalendar は過去4週間の学習カレンダーを生成する。
