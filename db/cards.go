@@ -45,7 +45,7 @@ func GetCard(db *sql.DB, id int64) (Card, error) {
 	if err := row.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 		return Card{}, err
 	}
-	c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	c.CreatedAt, _ = parseDBTime(createdAt)
 	return c, nil
 }
 
@@ -65,7 +65,7 @@ func ListCards(db *sql.DB) ([]Card, error) {
 		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		c.CreatedAt, _ = parseDBTime(createdAt)
 		cards = append(cards, c)
 	}
 	return cards, rows.Err()
@@ -88,7 +88,7 @@ func FindCardsByFront(db *sql.DB, front string) ([]Card, error) {
 		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		c.CreatedAt, _ = parseDBTime(createdAt)
 		cards = append(cards, c)
 	}
 	return cards, rows.Err()
@@ -161,7 +161,7 @@ func ListRandomCards(database *sql.DB, n int) ([]Card, error) {
 		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		c.CreatedAt, _ = parseDBTime(createdAt)
 		cards = append(cards, c)
 	}
 	return cards, rows.Err()
@@ -213,7 +213,7 @@ func ListRandomCardsExcluding(database *sql.DB, n int, excludeIDs []int64) ([]Ca
 		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		c.CreatedAt, _ = parseDBTime(createdAt)
 		cards = append(cards, c)
 	}
 	return cards, rows.Err()
@@ -267,7 +267,7 @@ func ListCardsWithTranslation(database *sql.DB) ([]Card, error) {
 		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		c.CreatedAt, _ = parseDBTime(createdAt)
 		cards = append(cards, c)
 	}
 	return cards, rows.Err()
@@ -293,7 +293,7 @@ func ListCardsNeedingTranslation(database *sql.DB) ([]Card, error) {
 		if err := rows.Scan(&c.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.ExampleTranslation, &c.ExampleWord, &createdAt); err != nil {
 			return nil, err
 		}
-		c.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		c.CreatedAt, _ = parseDBTime(createdAt)
 		cards = append(cards, c)
 	}
 	return cards, rows.Err()

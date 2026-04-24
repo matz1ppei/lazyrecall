@@ -97,7 +97,7 @@ func ListBenchmarkRuns(database *sql.DB) ([]BenchmarkRun, error) {
 		if err := rows.Scan(&r.ID, &runAt, &r.Total, &r.Correct); err != nil {
 			return nil, err
 		}
-		r.RunAt, _ = time.Parse("2006-01-02 15:04:05", runAt)
+		r.RunAt, _ = parseDBTime(runAt)
 		runs = append(runs, r)
 	}
 	return runs, rows.Err()

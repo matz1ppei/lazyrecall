@@ -69,4 +69,8 @@ var (
 	matchWrongStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("196"))
+
+	warningStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("214"))
 )

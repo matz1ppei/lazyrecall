@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,11 +31,13 @@ const (
 const dailyReviewLimit = 100
 
 type msgStats struct {
-	total         int
-	due           int
-	overdue       int
-	reviewedToday int
-	session       db.DailySession
+	total           int
+	due             int
+	overdue         int
+	reviewedToday   int
+	session         db.DailySession
+	notifyFatigue   bool
+	notifyBenchmark bool
 }
 
 type msgImportDone struct {
@@ -57,21 +60,25 @@ type msgAutoAddDone struct {
 	err   error
 }
 
+type msgNotificationReset struct{}
+
 type HomeModel struct {
-	db            *sql.DB
-	ai            ai.Client
-	cfg           config.Config
-	state         homeState
-	total         int
-	due           int
-	overdue       int
-	reviewedToday int
-	statsReady    bool
-	autoAdding    bool
-	session       db.DailySession
-	importInput   textinput.Model
-	importMsg     string
-	statusMsg     string // shown when navigating back from a session phase unexpectedly
+	db              *sql.DB
+	ai              ai.Client
+	cfg             config.Config
+	state           homeState
+	total           int
+	due             int
+	overdue         int
+	reviewedToday   int
+	statsReady      bool
+	autoAdding      bool
+	session         db.DailySession
+	importInput     textinput.Model
+	importMsg       string
+	statusMsg       string // shown when navigating back from a session phase unexpectedly
+	notifyFatigue   bool
+	notifyBenchmark bool
 	// configure state
 	cfgLangInput         textinput.Model
 	cfgCountInput        textinput.Model
@@ -139,7 +146,22 @@ func (h HomeModel) loadStats() tea.Cmd {
 			return msgStats{total: len(cards), due: due, overdue: overdue}
 		}
 		session, _ := db.GetTodaySession(database)
-		return msgStats{total: len(cards), due: due, overdue: overdue, reviewedToday: reviewedToday, session: session}
+
+		totalSessions, _ := db.CountAllReviewSessions(database)
+		clearedAt, _ := db.GetMilestoneInt(database, "fatigue_cleared_at_count")
+		notifyFatigue := totalSessions >= 20 && (totalSessions-clearedAt) >= 20
+
+		firstBenchmark, _ := db.FirstBenchmarkRunAt(database)
+		benchmarkCleared, _ := db.GetMilestoneInt(database, "benchmark_cleared")
+		notifyBenchmark := !firstBenchmark.IsZero() &&
+			time.Since(firstBenchmark) >= 60*24*time.Hour &&
+			benchmarkCleared == 0
+
+		return msgStats{
+			total: len(cards), due: due, overdue: overdue,
+			reviewedToday: reviewedToday, session: session,
+			notifyFatigue: notifyFatigue, notifyBenchmark: notifyBenchmark,
+		}
 	}
 }
 
@@ -151,6 +173,8 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.overdue = msg.overdue
 		h.reviewedToday = msg.reviewedToday
 		h.session = msg.session
+		h.notifyFatigue = msg.notifyFatigue
+		h.notifyBenchmark = msg.notifyBenchmark
 		h.statsReady = true
 		// Redirect first-time users to the onboarding setup flow.
 		if h.total == 0 {
@@ -200,6 +224,9 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if msg.saved > 0 {
 			h.importMsg = successStyle.Render(fmt.Sprintf("Auto-added %d cards today.", msg.saved))
 		}
+		return h, h.loadStats()
+
+	case msgNotificationReset:
 		return h, h.loadStats()
 
 	case tea.KeyMsg:
@@ -257,10 +284,35 @@ func (h HomeModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		h.cfgProfileInput.Blur()
 		h.cfgFeedbackLangInput.Blur()
 		return h, nil
+	case "1":
+		if h.notifyFatigue {
+			return h, h.resetFatigueNotificationCmd()
+		}
+	case "2":
+		if h.notifyBenchmark {
+			return h, h.resetBenchmarkNotificationCmd()
+		}
 	case "q":
 		return h, tea.Quit
 	}
 	return h, nil
+}
+
+func (h HomeModel) resetFatigueNotificationCmd() tea.Cmd {
+	database := h.db
+	return func() tea.Msg {
+		total, _ := db.CountAllReviewSessions(database)
+		_ = db.SetMilestoneInt(database, "fatigue_cleared_at_count", total)
+		return msgNotificationReset{}
+	}
+}
+
+func (h HomeModel) resetBenchmarkNotificationCmd() tea.Cmd {
+	database := h.db
+	return func() tea.Msg {
+		_ = db.SetMilestoneInt(database, "benchmark_cleared", 1)
+		return msgNotificationReset{}
+	}
 }
 
 func (h HomeModel) handlePracticeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -656,6 +708,18 @@ func (h HomeModel) View() string {
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("[tab] next  [e] toggle  [enter] save  [esc] cancel"))
 	default:
+		if h.notifyFatigue {
+			b.WriteString(warningStyle.Render("📊 [分析] 疲労カーブ分析のタイミングです（20セッション到達）"))
+			b.WriteString("\n")
+		}
+		if h.notifyBenchmark {
+			b.WriteString(warningStyle.Render("📊 [分析] Benchmark比較のタイミングです（初回から60日経過）"))
+			b.WriteString("\n")
+		}
+		if h.notifyFatigue || h.notifyBenchmark {
+			b.WriteString(helpStyle.Render("[1] 疲労カーブ通知をリセット  [2] Benchmark通知をリセット"))
+			b.WriteString("\n\n")
+		}
 		menu := []string{
 			keyStyle.Render("[d]") + menuItemStyle.Render(" Daily Session"),
 			keyStyle.Render("[p]") + menuItemStyle.Render(" Practice"),
