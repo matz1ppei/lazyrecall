@@ -53,9 +53,31 @@ func NewBrainDumpModel(cards []db.Card, label string, hints string, onComplete t
 	}
 }
 
+// wordShapeHint returns a masked representation of a word showing the first and last
+// letter with underscores for middle letters (e.g. "hola" → "h__a", "hacer" → "h___r").
+// Words of 1–2 runes are returned as-is.
+func wordShapeHint(word string) string {
+	r := []rune(word)
+	if len(r) <= 2 {
+		return word
+	}
+	mid := strings.Repeat("_", len(r)-2)
+	return string(r[0]) + mid + string(r[len(r)-1])
+}
+
+// wordShapeHints returns a comma-separated string of wordShapeHint for each card's Front.
+// Used for BD1 to show first+last letter with masked middle.
+func wordShapeHints(cards []db.Card) string {
+	var hints []string
+	for _, c := range cards {
+		hints = append(hints, wordShapeHint(c.Front))
+	}
+	return strings.Join(hints, ", ")
+}
+
 // firstLetterHints returns a comma-separated string of the first letter (rune) of each
 // card's Front. If excludeMatched is non-nil, cards where excludeMatched[i]==true are skipped.
-// BD1 passes nil to show all hints; BD2 passes BD1's matched slice to show only unrecalled cards.
+// BD2 passes BD1's matched slice to show only unrecalled cards.
 func firstLetterHints(cards []db.Card, excludeMatched []bool) string {
 	var letters []string
 	for i, c := range cards {

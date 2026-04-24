@@ -233,9 +233,9 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	case sessionPhaseBrainDump1:
 		// BrainDump1 gives the learner a free-recall warm-up after Review.
 		// Using extractCards here because BrainDumpModel expects []db.Card (not CardWithReview).
-		// Showing first-letter hints for all cards lowers initial anxiety while still requiring active recall.
+		// Showing first+last letter hints (e.g. "h__a") lowers initial anxiety while still requiring active recall.
 		cards1 := extractCards(m.cards)
-		m.brainDump1 = NewBrainDumpModel(cards1, "Brain Dump 1", firstLetterHints(cards1, nil), onComplete)
+		m.brainDump1 = NewBrainDumpModel(cards1, "Brain Dump 1", wordShapeHints(cards1), onComplete)
 		return m, m.brainDump1.Init()
 	case sessionPhaseMatch:
 		cards := extractCards(m.cards)
