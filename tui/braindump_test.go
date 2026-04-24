@@ -21,7 +21,7 @@ func buildBrainDumpModel(cards []db.Card) (BrainDumpModel, *bool) {
 		*fired = true
 		return msgSessionPhaseComplete{}
 	})
-	m := NewBrainDumpModel(cards, "Brain Dump 1", onComplete)
+	m := NewBrainDumpModel(cards, "Brain Dump 1", "", onComplete)
 	return m, fired
 }
 
