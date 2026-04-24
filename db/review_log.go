@@ -39,7 +39,7 @@ func InsertReviewEvent(database *sql.DB, sessionID, cardID int64, position int, 
 	return err
 }
 
-// CountTodayReviewSessions returns the number of review_sessions that have ended today.
+// CountTodayReviewSessions returns the number of review_sessions that started today.
 // Used to compute day_session_no for the next session.
 func CountTodayReviewSessions(database *sql.DB) (int, error) {
 	var count int

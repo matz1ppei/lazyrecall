@@ -130,12 +130,12 @@ lazyrecall/
 - 全フェーズ正解（All-correct）→ `UpdateReview(Good)` でインターバルが進む
 - 1つでも不正解 → `UpdateReview(Again)` で due_date がリセットされ翌日また出る
 
-### reviewed_at（レビュー記録）の条件
+### 記録とFSRS更新の条件
 
 | モード | 記録タイミング |
 |---|---|
-| Daily Session | セッション最後（Blank完了後）にまとめて記録。途中 `esc` では記録されない |
-| Standalone Review | 1問回答するごとに即時記録 |
+| Daily Session | セッション最後（Blank完了後）にまとめて `reviewed_at` / FSRS を更新。途中 `esc` では記録されない |
+| Standalone Practice | 練習用。`reviewed_at` / FSRS は更新しない |
 
 ### カードの状態分類
 

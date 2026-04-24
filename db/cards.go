@@ -36,6 +36,37 @@ func CreateCard(db *sql.DB, front, back, hint, example, exampleTranslation, exam
 	return res.LastInsertId()
 }
 
+// CreateCardWithReview creates a card and its initial review row atomically.
+func CreateCardWithReview(db *sql.DB, front, back, hint, example, exampleTranslation, exampleWord string) (int64, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
+		`INSERT INTO cards (front, back, hint, example, example_translation, example_word) VALUES (?, ?, ?, ?, ?, ?)`,
+		front, back, hint, example, exampleTranslation, exampleWord,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.Exec(`INSERT INTO reviews (card_id) VALUES (?)`, id); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 func GetCard(db *sql.DB, id int64) (Card, error) {
 	row := db.QueryRow(
 		`SELECT id, front, back, hint, example, example_translation, example_word, created_at FROM cards WHERE id = ?`, id,

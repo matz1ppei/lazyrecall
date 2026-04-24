@@ -231,7 +231,7 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 					FROM review_events re
 					JOIN review_sessions rs ON rs.id = re.review_session_id
 					WHERE rs.ended_at IS NOT NULL
-					  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+					  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
 					  AND re.card_id = r.card_id
 				  )
 			), 0)
@@ -241,7 +241,7 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 				FROM review_events re
 				JOIN review_sessions rs ON rs.id = re.review_session_id
 				WHERE rs.ended_at IS NOT NULL
-				  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+				  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
 			), 0)
 	`).Scan(&s.ReviewedToday)
 	if err != nil {
@@ -259,7 +259,7 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 					FROM review_events re
 					JOIN review_sessions rs ON rs.id = re.review_session_id
 					WHERE rs.ended_at IS NOT NULL
-					  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+					  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
 					  AND re.card_id = r.card_id
 				  )
 			), 0)
@@ -269,7 +269,7 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 				FROM review_events re
 				JOIN review_sessions rs ON rs.id = re.review_session_id
 				WHERE rs.ended_at IS NOT NULL
-				  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+				  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
 			), 0)
 	`).Scan(&s.CorrectToday)
 	if err != nil {
@@ -340,7 +340,7 @@ func CountReviewedToday(db *sql.DB) (int, error) {
 					FROM review_events re
 					JOIN review_sessions rs ON rs.id = re.review_session_id
 					WHERE rs.ended_at IS NOT NULL
-					  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+					  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
 					  AND re.card_id = r.card_id
 				  )
 			), 0)
@@ -350,7 +350,7 @@ func CountReviewedToday(db *sql.DB) (int, error) {
 				FROM review_events re
 				JOIN review_sessions rs ON rs.id = re.review_session_id
 				WHERE rs.ended_at IS NOT NULL
-				  AND date(rs.started_at, 'localtime') = date('now', 'localtime')
+				  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
 			), 0)
 	`).Scan(&n)
 	return n, err
