@@ -460,3 +460,166 @@ func TestCalcStreak(t *testing.T) {
 		})
 	}
 }
+
+func TestApplySessionResultsUpdatesReviewedTodayAndEndsSession(t *testing.T) {
+	db := openTestDB(t)
+
+	cardID1, _ := CreateCard(db, "front1", "back1", "", "", "", "")
+	cardID2, _ := CreateCard(db, "front2", "back2", "", "", "", "")
+
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+
+	err = ApplySessionResults(db, []SessionResult{
+		{CardID: cardID1, Rating: 4},
+		{CardID: cardID2, Rating: 0},
+	}, sessionID)
+	if err != nil {
+		t.Fatalf("ApplySessionResults: %v", err)
+	}
+
+	reviewedToday, err := CountReviewedToday(db)
+	if err != nil {
+		t.Fatalf("CountReviewedToday: %v", err)
+	}
+	if reviewedToday != 2 {
+		t.Fatalf("CountReviewedToday = %d, want 2", reviewedToday)
+	}
+
+	var endedAt sql.NullString
+	if err := db.QueryRow(`SELECT ended_at FROM review_sessions WHERE id = ?`, sessionID).Scan(&endedAt); err != nil {
+		t.Fatalf("review_sessions ended_at: %v", err)
+	}
+	if !endedAt.Valid || endedAt.String == "" {
+		t.Fatal("expected ended_at to be set")
+	}
+
+	r1, err := GetOrCreateReview(db, cardID1)
+	if err != nil {
+		t.Fatalf("GetOrCreateReview(card1): %v", err)
+	}
+	if r1.LastRating == nil || *r1.LastRating != 4 {
+		t.Fatalf("card1 LastRating = %v, want 4", r1.LastRating)
+	}
+
+	r2, err := GetOrCreateReview(db, cardID2)
+	if err != nil {
+		t.Fatalf("GetOrCreateReview(card2): %v", err)
+	}
+	if r2.LastRating == nil || *r2.LastRating != 0 {
+		t.Fatalf("card2 LastRating = %v, want 0", r2.LastRating)
+	}
+}
+
+func TestApplySessionResultsRollsBackOnError(t *testing.T) {
+	db := openTestDB(t)
+
+	cardID, _ := CreateCard(db, "front", "back", "", "", "", "")
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+
+	err = ApplySessionResults(db, []SessionResult{
+		{CardID: cardID, Rating: 4},
+		{CardID: 999999, Rating: 0},
+	}, sessionID)
+	if err == nil {
+		t.Fatal("expected ApplySessionResults to fail for missing card")
+	}
+
+	reviewedToday, err := CountReviewedToday(db)
+	if err != nil {
+		t.Fatalf("CountReviewedToday: %v", err)
+	}
+	if reviewedToday != 0 {
+		t.Fatalf("CountReviewedToday = %d, want 0 after rollback", reviewedToday)
+	}
+
+	var endedAt sql.NullString
+	if err := db.QueryRow(`SELECT ended_at FROM review_sessions WHERE id = ?`, sessionID).Scan(&endedAt); err != nil {
+		t.Fatalf("review_sessions ended_at: %v", err)
+	}
+	if endedAt.Valid {
+		t.Fatalf("expected ended_at to stay NULL after rollback, got %q", endedAt.String)
+	}
+}
+
+func TestCountReviewedTodayIncludesEndedSessionEvents(t *testing.T) {
+	db := openTestDB(t)
+
+	cardID1, _ := CreateCard(db, "front1", "back1", "", "", "", "")
+	cardID2, _ := CreateCard(db, "front2", "back2", "", "", "", "")
+
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+	if err := InsertReviewEvent(db, sessionID, cardID1, 1, 500, true); err != nil {
+		t.Fatalf("InsertReviewEvent(card1): %v", err)
+	}
+	if err := InsertReviewEvent(db, sessionID, cardID2, 2, 500, true); err != nil {
+		t.Fatalf("InsertReviewEvent(card2): %v", err)
+	}
+	if err := EndReviewSession(db, sessionID); err != nil {
+		t.Fatalf("EndReviewSession: %v", err)
+	}
+
+	reviewedToday, err := CountReviewedToday(db)
+	if err != nil {
+		t.Fatalf("CountReviewedToday: %v", err)
+	}
+	if reviewedToday != 2 {
+		t.Fatalf("CountReviewedToday = %d, want 2", reviewedToday)
+	}
+}
+
+func TestCountReviewedTodayAddsStandaloneAndSessionCountsWithoutDoubleCounting(t *testing.T) {
+	db := openTestDB(t)
+
+	sessionCardID, _ := CreateCard(db, "session-front", "session-back", "", "", "", "")
+	standaloneCardID, _ := CreateCard(db, "standalone-front", "standalone-back", "", "", "", "")
+
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+	if err := InsertReviewEvent(db, sessionID, sessionCardID, 1, 500, true); err != nil {
+		t.Fatalf("InsertReviewEvent(session): %v", err)
+	}
+	if err := EndReviewSession(db, sessionID); err != nil {
+		t.Fatalf("EndReviewSession: %v", err)
+	}
+
+	if err := ApplySessionResults(db, []SessionResult{{CardID: sessionCardID, Rating: 4}}, sessionID); err != nil {
+		t.Fatalf("ApplySessionResults: %v", err)
+	}
+
+	review, err := GetOrCreateReview(db, standaloneCardID)
+	if err != nil {
+		t.Fatalf("GetOrCreateReview(standalone): %v", err)
+	}
+	rating := 4
+	review.LastRating = &rating
+	if err := UpdateReview(db, review); err != nil {
+		t.Fatalf("UpdateReview(standalone): %v", err)
+	}
+
+	reviewedToday, err := CountReviewedToday(db)
+	if err != nil {
+		t.Fatalf("CountReviewedToday: %v", err)
+	}
+	if reviewedToday != 2 {
+		t.Fatalf("CountReviewedToday = %d, want 2", reviewedToday)
+	}
+
+	stats, err := GetReviewStats(db)
+	if err != nil {
+		t.Fatalf("GetReviewStats: %v", err)
+	}
+	if stats.ReviewedToday != 2 {
+		t.Fatalf("GetReviewStats.ReviewedToday = %d, want 2", stats.ReviewedToday)
+	}
+}

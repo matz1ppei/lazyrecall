@@ -8,6 +8,7 @@ import (
 	"github.com/ippei/lazyrecall/ai"
 	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
+	"github.com/ippei/lazyrecall/debuglog"
 	"github.com/ippei/lazyrecall/slack"
 	"github.com/ippei/lazyrecall/tui"
 	"github.com/joho/godotenv"
@@ -15,6 +16,9 @@ import (
 
 func main() {
 	_ = godotenv.Load()
+	if err := debuglog.InitFile("lazyrecall.log"); err != nil {
+		log.Printf("debug log init failed: %v", err)
+	}
 
 	if len(os.Args) > 1 && os.Args[1] == "notify" {
 		runNotify()
