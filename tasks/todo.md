@@ -96,4 +96,5 @@
 - Add flow refinement: `Front` now triggers the same full-card generation path as `Fetch: Language`, so users can enter one word and review the completed card immediately.
 - Prompt clarity: AI card generation now explicitly asks for English hints and target-language examples, with English example translations.
 - Add language routing: word-first Add now uses the configured study language for the same AI card-generation path as `Fetch: Language`.
+- Support language policy: study-language-aware generation now uses `English -> Japanese` and `others -> English` for meanings, hints, and example translations.
 - Verification: `go test ./...`
