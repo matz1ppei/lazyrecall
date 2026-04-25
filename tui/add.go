@@ -117,6 +117,11 @@ func (m AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dupCards = msg.cards
 		} else {
 			m.inputs[0].Blur()
+			if m.ai != nil {
+				m.loading = true
+				m.status = subtitleStyle.Render("Generating card details...")
+				return m, m.generateCardDetails()
+			}
 			m.step = stepBack
 			m.status = ""
 			return m, m.inputs[1].Focus()
@@ -147,6 +152,11 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.dupWarning = false
 			m.dupCards = nil
 			m.inputs[0].Blur()
+			if m.ai != nil {
+				m.loading = true
+				m.status = subtitleStyle.Render("Generating card details...")
+				return m, m.generateCardDetails()
+			}
 			m.step = stepBack
 			m.status = ""
 			return m, m.inputs[1].Focus()
@@ -190,7 +200,7 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 				m.loading = true
 				m.status = subtitleStyle.Render("Generating card details...")
-				return m, m.generateCardDetails("")
+				return m, m.generateCardDetails()
 			}
 			m.inputs[1].Blur()
 			m.step = stepHint
@@ -217,7 +227,7 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.step == stepBack && m.ai != nil && !m.loading {
 			m.loading = true
 			m.status = subtitleStyle.Render("Generating card details...")
-			return m, m.generateCardDetails(strings.TrimSpace(m.inputs[1].Value()))
+			return m, m.generateCardDetails()
 		}
 		if (m.step == stepHint || m.step == stepExample) && m.ai != nil && !m.loading {
 			m.loading = true
@@ -261,8 +271,9 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m AddModel) generateCardDetails(back string) tea.Cmd {
+func (m AddModel) generateCardDetails() tea.Cmd {
 	front := strings.TrimSpace(m.inputs[0].Value())
+	back := strings.TrimSpace(m.inputs[1].Value())
 	aiClient := m.ai
 	return func() tea.Msg {
 		if back != "" {

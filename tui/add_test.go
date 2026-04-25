@@ -1,32 +1,47 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/db"
 )
 
-func TestAddModelAutoGeneratesFromWordWhenMeaningEmpty(t *testing.T) {
+func TestAddModelAutoGeneratesFromWordAfterFrontEntry(t *testing.T) {
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
 	mockAI := &ai.MockClient{
 		CardBack: "dog",
 		CardHint: "pet",
 	}
-	m := NewAddModel(nil, mockAI)
+	m := NewAddModel(database, mockAI)
 	m.inputs[0].SetValue("perro")
-	m.step = stepBack
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(AddModel)
 	if !got.loading {
-		t.Fatal("expected loading while generating card details")
+		t.Fatal("expected loading while checking duplicates")
 	}
 	if cmd == nil {
-		t.Fatal("expected generation command")
+		t.Fatal("expected duplicate-check command")
 	}
 
 	msg := cmd()
+	updated, cmd = got.Update(msg)
+	got = updated.(AddModel)
+	if !got.loading {
+		t.Fatal("expected loading while generating card details")
+	}
+	if cmd == nil {
+		t.Fatal("expected generation command after duplicate check")
+	}
+
+	msg = cmd()
 	updated, _ = got.Update(msg)
 	got = updated.(AddModel)
 
@@ -42,26 +57,47 @@ func TestAddModelAutoGeneratesFromWordWhenMeaningEmpty(t *testing.T) {
 }
 
 func TestAddModelRequiresMeaningWithoutAI(t *testing.T) {
-	m := NewAddModel(nil, nil)
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	m := NewAddModel(database, nil)
 	m.inputs[0].SetValue("perro")
-	m.step = stepBack
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(AddModel)
 
-	if cmd != nil {
-		t.Fatal("expected no command without AI")
+	if !got.loading {
+		t.Fatal("expected loading while checking duplicates")
 	}
-	if !strings.Contains(got.status, "Meaning cannot be empty without AI") {
-		t.Fatalf("unexpected status: %s", got.status)
+	if cmd == nil {
+		t.Fatal("expected duplicate-check command")
+	}
+
+	msg := cmd()
+	updated, cmd = got.Update(msg)
+	got = updated.(AddModel)
+	if got.step != stepBack {
+		t.Fatalf("step = %v, want back", got.step)
+	}
+	if got.inputs[1].Value() != "" {
+		t.Fatalf("expected empty meaning input, got %q", got.inputs[1].Value())
 	}
 }
 
 func TestAddModelCtrlGGeneratesDetailsForKnownMeaning(t *testing.T) {
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
 	mockAI := &ai.MockClient{
 		CardHint: "memory hook",
 	}
-	m := NewAddModel(nil, mockAI)
+	m := NewAddModel(database, mockAI)
 	m.inputs[0].SetValue("perro")
 	m.inputs[1].SetValue("dog")
 	m.step = stepBack
@@ -86,5 +122,40 @@ func TestAddModelCtrlGGeneratesDetailsForKnownMeaning(t *testing.T) {
 	}
 	if got.step != stepConfirm {
 		t.Fatalf("step = %v, want confirm", got.step)
+	}
+}
+
+func TestAddModelDuplicateContinueAlsoGeneratesFromWord(t *testing.T) {
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	mockAI := &ai.MockClient{
+		CardBack: "dog",
+	}
+	m := NewAddModel(database, mockAI)
+	m.dupWarning = true
+	m.dupCards = []db.Card{{Front: "perro", Back: "dog"}}
+	m.inputs[0].SetValue("perro")
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	got := updated.(AddModel)
+	if !got.loading {
+		t.Fatal("expected loading while generating after duplicate continue")
+	}
+	if cmd == nil {
+		t.Fatal("expected generation command")
+	}
+
+	msg := cmd()
+	updated, _ = got.Update(msg)
+	got = updated.(AddModel)
+	if got.step != stepConfirm {
+		t.Fatalf("step = %v, want confirm", got.step)
+	}
+	if got.inputs[1].Value() != "dog" {
+		t.Fatalf("back = %q, want dog", got.inputs[1].Value())
 	}
 }

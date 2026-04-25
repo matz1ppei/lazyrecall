@@ -91,4 +91,5 @@
 - Completion clarity: the Daily Session result screen now says `Minimum reached` or `Ideal reached`, so the day's stopping point matches Home.
 - Stats simplification: Stats now stays focused on streak, activity, and today's result, with lower-signal sections removed.
 - Add flow: the Add screen now starts from `Word`, treats `Meaning` as optional when AI is available, and can auto-fill the rest of the card from that single word.
+- Add flow refinement: `Front` now triggers the same full-card generation path as `Fetch: Language`, so users can enter one word and review the completed card immediately.
 - Verification: `go test ./...`
