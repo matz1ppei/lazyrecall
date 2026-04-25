@@ -37,6 +37,7 @@ type msgSessionReady struct {
 	cards             []db.CardWithReview
 	reason            string // non-empty when session cannot start (e.g. DB error, no cards)
 	reviewSessionID   int64
+	daySessionNo      int
 	startErr          string // non-empty when StartReviewSession failed (session continues, but review_sessions row missing)
 	phase             sessionPhase
 	reviewCorrectIDs  []int64
@@ -88,6 +89,7 @@ type SessionModel struct {
 	retryReview       ReverseInputModel
 	retryReviewDone   bool
 	reviewSessionID   int64
+	daySessionNo      int
 	startErr          string // non-empty when StartReviewSession failed
 	progressErr       string
 	saveErr           string
@@ -115,9 +117,11 @@ func (m SessionModel) Init() tea.Cmd {
 		if err == nil && snapshot.Date == today && len(snapshot.CardIDs) > 0 {
 			cards, cardErr := db.ListCardsWithReviewByIDs(database, snapshot.CardIDs)
 			if cardErr == nil {
+				daySessionNo, _ := db.GetReviewSessionDayNumber(database, snapshot.ReviewSessionID)
 				return msgSessionReady{
 					cards:             cards,
 					reviewSessionID:   snapshot.ReviewSessionID,
+					daySessionNo:      daySessionNo,
 					startErr:          snapshot.StartErr,
 					phase:             sessionPhaseFromSnapshot(snapshot.Phase),
 					reviewCorrectIDs:  snapshot.ReviewCorrectIDs,
@@ -169,7 +173,7 @@ func (m SessionModel) Init() tea.Cmd {
 		} else {
 			debuglog.Infof("daily_session started: session_id=%d cards=%d day_no=%d", sessionID, len(filtered), dayNo+1)
 		}
-		return msgSessionReady{cards: filtered, reviewSessionID: sessionID, startErr: startErrStr, phase: sessionPhasePreview}
+		return msgSessionReady{cards: filtered, reviewSessionID: sessionID, daySessionNo: dayNo + 1, startErr: startErrStr, phase: sessionPhasePreview}
 	}
 }
 
@@ -214,6 +218,7 @@ func (m SessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.cards = msg.cards
 		m.reviewSessionID = msg.reviewSessionID
+		m.daySessionNo = msg.daySessionNo
 		m.startErr = msg.startErr
 		m.reviewCorrectIDs = append([]int64(nil), msg.reviewCorrectIDs...)
 		m.reverseCorrectIDs = append([]int64(nil), msg.reverseCorrectIDs...)
@@ -758,8 +763,10 @@ func (m SessionModel) viewDone() string {
 		b.WriteString(subtitleStyle.Render("No cards yet. Add some cards first!"))
 	case m.saveErr != "":
 		b.WriteString(errorStyle.Render("Session finished, but final results were not saved."))
+	case m.daySessionNo >= dailySessionIdealGoal:
+		b.WriteString(idealStyle.Render(fmt.Sprintf("Ideal reached! Daily Session %d / %d complete.", m.daySessionNo, dailySessionIdealGoal)))
 	case allDone:
-		b.WriteString(successStyle.Render(fmt.Sprintf("Goal achieved! All %d cards covered.", len(m.cards))))
+		b.WriteString(successStyle.Render("Minimum reached! Today's Daily Session is done."))
 	case anyDone:
 		done := 0
 		if m.reviewDone {
@@ -775,6 +782,8 @@ func (m SessionModel) viewDone() string {
 			done++
 		}
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Streak continues! (%d / 4 phases complete)", done)))
+	default:
+		b.WriteString(labelStyle.Render("Session complete."))
 	}
 	b.WriteString("\n\n")
 	if !m.startedAt.IsZero() && !m.finishedAt.IsZero() {

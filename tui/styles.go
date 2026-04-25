@@ -28,6 +28,9 @@ var (
 	successStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("82"))
 
+	idealStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("39"))
+
 	errorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("196"))
 

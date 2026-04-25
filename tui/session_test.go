@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -94,5 +95,37 @@ func TestSessionMsgMarkDoneClearsSnapshot(t *testing.T) {
 	}
 	if snapshot.Date != "" || len(snapshot.CardIDs) != 0 {
 		t.Fatalf("expected snapshot to be cleared, got %+v", snapshot)
+	}
+}
+
+func TestSessionDoneViewShowsMinimumReached(t *testing.T) {
+	model := NewSessionModel(nil, nil)
+	model.phase = sessionPhaseDone
+	model.cards = []db.CardWithReview{{Card: db.Card{ID: 1}}}
+	model.reviewDone = true
+	model.matchDone = true
+	model.reverseReviewDone = true
+	model.blankDone = true
+	model.daySessionNo = 1
+
+	view := model.View()
+	if !strings.Contains(view, "Minimum reached! Today's Daily Session is done.") {
+		t.Fatalf("expected minimum reached message, got: %s", view)
+	}
+}
+
+func TestSessionDoneViewShowsIdealReached(t *testing.T) {
+	model := NewSessionModel(nil, nil)
+	model.phase = sessionPhaseDone
+	model.cards = []db.CardWithReview{{Card: db.Card{ID: 1}}}
+	model.reviewDone = true
+	model.matchDone = true
+	model.reverseReviewDone = true
+	model.blankDone = true
+	model.daySessionNo = 2
+
+	view := model.View()
+	if !strings.Contains(view, "Ideal reached! Daily Session 2 / 2 complete.") {
+		t.Fatalf("expected ideal reached message, got: %s", view)
 	}
 }

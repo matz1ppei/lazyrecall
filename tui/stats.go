@@ -11,21 +11,21 @@ import (
 )
 
 type msgStatsLoaded struct {
-	stats       db.ReviewStats
-	practice    db.PracticeTodayStats
-	recentRuns  []db.PracticeRun
-	recentDates map[string]bool
-	err         error
+	stats          db.ReviewStats
+	practice       db.PracticeTodayStats
+	sessionCounts  map[string]int
+	completedToday int
+	err            error
 }
 
 type StatsModel struct {
-	db          *sql.DB
-	stats       db.ReviewStats
-	practice    db.PracticeTodayStats
-	recentRuns  []db.PracticeRun
-	recentDates map[string]bool
-	ready       bool
-	err         string
+	db             *sql.DB
+	stats          db.ReviewStats
+	practice       db.PracticeTodayStats
+	sessionCounts  map[string]int
+	completedToday int
+	ready          bool
+	err            string
 }
 
 func NewStatsModel(database *sql.DB) StatsModel {
@@ -43,12 +43,15 @@ func (m StatsModel) Init() tea.Cmd {
 		if err != nil {
 			return msgStatsLoaded{err: err}
 		}
-		runs, err := db.ListRecentPracticeRuns(database, 5)
+		sessionCounts, err := db.GetRecentCompletedDailySessionCounts(database, 28)
 		if err != nil {
 			return msgStatsLoaded{err: err}
 		}
-		dates, err := db.GetRecentSessionDates(database, 28)
-		return msgStatsLoaded{stats: s, practice: practice, recentRuns: runs, recentDates: dates, err: err}
+		completedToday, err := db.CountCompletedDailySessionsToday(database)
+		return msgStatsLoaded{
+			stats: s, practice: practice, sessionCounts: sessionCounts,
+			completedToday: completedToday, err: err,
+		}
 	}
 }
 
@@ -60,8 +63,8 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.stats = msg.stats
 			m.practice = msg.practice
-			m.recentRuns = msg.recentRuns
-			m.recentDates = msg.recentDates
+			m.sessionCounts = msg.sessionCounts
+			m.completedToday = msg.completedToday
 			m.ready = true
 		}
 		return m, nil
@@ -102,23 +105,37 @@ func (m StatsModel) View() string {
 	b.WriteString(subtitleStyle.Render("Streak"))
 	b.WriteString("\n")
 	b.WriteString(labelStyle.Render(fmt.Sprintf("  %s", streakLabel)))
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("  Streak counts days with at least one completed Daily Session."))
 	b.WriteString("\n\n")
 
 	// Activity calendar
 	b.WriteString(subtitleStyle.Render("Activity (last 4 weeks)"))
 	b.WriteString("\n")
-	b.WriteString(renderCalendar(m.recentDates))
+	b.WriteString(renderCalendar(m.sessionCounts))
 	b.WriteString("\n")
-
-	// Card breakdown
-	b.WriteString(subtitleStyle.Render("Cards"))
-	b.WriteString("\n")
-	b.WriteString(labelStyle.Render(fmt.Sprintf("  Total: %d   Mature: %d   Learning: %d   New: %d",
-		s.TotalCards, s.MatureCards, s.LearningCards, s.NewCards)))
+	b.WriteString(helpStyle.Render("  Activity shows completed Daily Sessions only. Partial phase progress does not count here."))
 	b.WriteString("\n\n")
 
 	// Today
 	b.WriteString(subtitleStyle.Render("Today"))
+	b.WriteString("\n")
+	sessionGoalLabel := fmt.Sprintf("  Daily Session: %d / %d minimum", m.completedToday, dailySessionMinimumGoal)
+	sessionGoalStyle := labelStyle
+	if m.completedToday >= dailySessionMinimumGoal {
+		sessionGoalStyle = successStyle
+	}
+	if m.completedToday >= dailySessionIdealGoal {
+		sessionGoalLabel = fmt.Sprintf("  Daily Session: %d / %d ideal", m.completedToday, dailySessionIdealGoal)
+		sessionGoalStyle = idealStyle
+	}
+	b.WriteString(sessionGoalStyle.Render(sessionGoalLabel))
+	b.WriteString("\n")
+	if m.completedToday < dailySessionIdealGoal {
+		b.WriteString(helpStyle.Render(fmt.Sprintf("  Ideal line: %d / %d completed Daily Sessions.", m.completedToday, dailySessionIdealGoal)))
+	} else {
+		b.WriteString(idealStyle.Render("  Ideal line reached."))
+	}
 	b.WriteString("\n")
 	correctRate := ""
 	if s.ReviewedToday > 0 {
@@ -130,53 +147,19 @@ func (m StatsModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("  Daily Session and saved review updates count here."))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("  Correct uses the final saved result (Daily Session Good / saved standalone Good)."))
-	b.WriteString("\n")
 	b.WriteString(labelStyle.Render(fmt.Sprintf("  Standalone practice: %d run(s), %d items, %d correct",
 		m.practice.Runs, m.practice.Items, m.practice.Correct)))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("  Standalone practice does not change FSRS or reviewed_at."))
-	b.WriteString("\n\n")
-
-	b.WriteString(subtitleStyle.Render("Recent Standalone Practice"))
-	b.WriteString("\n")
-	if len(m.recentRuns) == 0 {
-		b.WriteString(helpStyle.Render("  No standalone practice runs yet."))
-	} else {
-		for _, run := range m.recentRuns {
-			when := run.FinishedAt
-			if t, err := time.Parse("2006-01-02 15:04:05", run.FinishedAt); err == nil {
-				when = t.Format("01-02 15:04")
-			}
-			b.WriteString(labelStyle.Render(fmt.Sprintf("  %s  %s  %d / %d",
-				when, formatPracticeMode(run.Mode), run.Correct, run.Total)))
-			b.WriteString("\n")
-		}
-	}
+	b.WriteString(helpStyle.Render("  Correct uses the final saved result. Standalone stays separate."))
 	b.WriteString("\n\n")
 
 	b.WriteString(helpStyle.Render("[esc] back"))
 	return b.String()
 }
 
-func formatPracticeMode(mode string) string {
-	switch mode {
-	case "review":
-		return "Review"
-	case "reverse_review":
-		return "Reverse"
-	case "match":
-		return "Match"
-	case "blank":
-		return "Blank"
-	default:
-		return mode
-	}
-}
-
 // renderCalendar は過去4週間の学習カレンダーを生成する。
 // 最新週が一番下、今日が右下端になるよう配置する。
-func renderCalendar(dates map[string]bool) string {
+func renderCalendar(sessionCounts map[string]int) string {
 	var b strings.Builder
 	today := time.Now()
 	todayStr := today.Format("2006-01-02")
@@ -200,10 +183,16 @@ func renderCalendar(dates map[string]bool) string {
 			if dStr > todayStr {
 				// 未来は空白（ヘッダの2文字幅に合わせる）
 				row.WriteString("  ")
-			} else if dates[dStr] {
-				row.WriteString(successStyle.Render("##"))
 			} else {
-				row.WriteString(helpStyle.Render("--"))
+				count := sessionCounts[dStr]
+				switch {
+				case count >= dailySessionIdealGoal:
+					row.WriteString(idealStyle.Render("##"))
+				case count >= dailySessionMinimumGoal:
+					row.WriteString(successStyle.Render("##"))
+				default:
+					row.WriteString(helpStyle.Render("--"))
+				}
 			}
 		}
 		b.WriteString(row.String())

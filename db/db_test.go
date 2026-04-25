@@ -771,6 +771,73 @@ func TestGetReviewStatsCorrectTodayUsesFinalDailySessionRating(t *testing.T) {
 	}
 }
 
+func TestCompletedDailySessionCountsDriveGoalsAndStreak(t *testing.T) {
+	db := openTestDB(t)
+
+	sessionToday1, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession(today1): %v", err)
+	}
+	sessionToday2, err := StartReviewSession(db, "daily_session", 2)
+	if err != nil {
+		t.Fatalf("StartReviewSession(today2): %v", err)
+	}
+	sessionYesterday, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession(yesterday): %v", err)
+	}
+	nowUTC := time.Now().UTC()
+	if _, err := db.Exec(
+		`UPDATE review_sessions
+		 SET ended_at = ?
+		 WHERE id IN (?, ?)`,
+		nowUTC.Format("2006-01-02 15:04:05"),
+		sessionToday1, sessionToday2,
+	); err != nil {
+		t.Fatalf("UPDATE review_sessions(today): %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE review_sessions
+		 SET started_at = ?,
+		     ended_at = ?
+		 WHERE id = ?`,
+		nowUTC.AddDate(0, 0, -1).Format("2006-01-02 15:04:05"),
+		nowUTC.AddDate(0, 0, -1).Format("2006-01-02 15:04:05"),
+		sessionYesterday,
+	); err != nil {
+		t.Fatalf("UPDATE review_sessions(yesterday): %v", err)
+	}
+
+	completedToday, err := CountCompletedDailySessionsToday(db)
+	if err != nil {
+		t.Fatalf("CountCompletedDailySessionsToday: %v", err)
+	}
+	if completedToday != 2 {
+		t.Fatalf("CountCompletedDailySessionsToday = %d, want 2", completedToday)
+	}
+
+	counts, err := GetRecentCompletedDailySessionCounts(db, 7)
+	if err != nil {
+		t.Fatalf("GetRecentCompletedDailySessionCounts: %v", err)
+	}
+	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	if counts[today] != 2 {
+		t.Fatalf("counts[today] = %d, want 2", counts[today])
+	}
+	if counts[yesterday] != 1 {
+		t.Fatalf("counts[yesterday] = %d, want 1", counts[yesterday])
+	}
+
+	stats, err := GetReviewStats(db)
+	if err != nil {
+		t.Fatalf("GetReviewStats: %v", err)
+	}
+	if stats.Streak != 2 {
+		t.Fatalf("GetReviewStats.Streak = %d, want 2", stats.Streak)
+	}
+}
+
 func TestPracticeRunLoggingAndQueries(t *testing.T) {
 	db := openTestDB(t)
 
