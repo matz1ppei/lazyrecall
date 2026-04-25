@@ -625,13 +625,12 @@ func (h HomeModel) View() string {
 		if remaining > h.due {
 			remaining = h.due
 		}
-		dueToday := h.due - h.overdue
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Total: %d cards", h.total)))
 		b.WriteString("\n")
 		if h.overdue > 0 {
-			b.WriteString(labelStyle.Render(fmt.Sprintf("Due today: %d   Overdue: %d", dueToday, h.overdue)))
+			b.WriteString(labelStyle.Render(fmt.Sprintf("Due now: %d   Past-day overdue: %d", h.due, h.overdue)))
 		} else {
-			b.WriteString(labelStyle.Render(fmt.Sprintf("Due today: %d", dueToday)))
+			b.WriteString(labelStyle.Render(fmt.Sprintf("Due now: %d", h.due)))
 		}
 		b.WriteString("\n")
 		b.WriteString(labelStyle.Render(fmt.Sprintf("Today: %d / %d reviewed   Remaining: %d", h.reviewedToday, dailyReviewLimit, remaining)))

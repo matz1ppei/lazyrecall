@@ -82,7 +82,7 @@ func getOrCreateReviewTx(tx *sql.Tx, cardID int64) (Review, error) {
 		return Review{
 			ID:         id,
 			CardID:     cardID,
-			DueDate:    time.Now().Format("2006-01-02"),
+			DueDate:    time.Now().Format("2006-01-02 15:04:05"),
 			Interval:   1,
 			EaseFactor: 2.5,
 		}, nil

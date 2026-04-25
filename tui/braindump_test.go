@@ -146,3 +146,13 @@ func TestBrainDumpInputView(t *testing.T) {
 		t.Errorf("View() missing help hint '[enter]'; got: %s", view)
 	}
 }
+
+func TestBrainDumpInputViewShowsHintsWhenProvided(t *testing.T) {
+	cards := []db.Card{makeCardFront("apple"), makeCardFront("banana")}
+	m := NewBrainDumpModel(cards, "Brain Dump 3", "a, b", nil)
+
+	view := m.View()
+	if !strings.Contains(view, "Hints: a, b") {
+		t.Fatalf("expected hint line in view, got: %s", view)
+	}
+}

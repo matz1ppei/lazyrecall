@@ -35,6 +35,15 @@
 - [x] Expand card edit to include example translation and example word
 - [x] Add regression tests for list sorting and expanded edit saves
 - [x] Run the relevant test suite and review results
+- [x] Change review due scheduling from day precision to datetime precision
+- [x] Update due-card selection/counting to respect intra-day due times
+- [x] Keep list/home UX readable while storing precise due timestamps
+- [x] Add regression tests for same-day future due timestamps
+- [x] Run the relevant test suite and review results
+- [x] Clarify the current `Stats` correct-count definition for the user
+- [x] Add hints to Brain Dump 3 in Daily Session
+- [x] Add or update regression coverage for Brain Dump 3 hints
+- [x] Run the relevant test suite and review results
 
 ## Review
 
@@ -52,4 +61,5 @@
 - Standalone visibility: completed Review/Reverse/Match/Blank runs now show up as standalone practice totals and recent run history.
 - Card list sorting: `List cards` now cycles through due/front/new/excluded sorting while preserving the current search/filter flow.
 - Expanded editing: card edit now includes `example_translation` and `example_word`, so Blank/Compose support text can be tuned directly.
+- Due precision: review due timestamps now keep FSRS time-of-day precision, so same-day short-term intervals are respected instead of being rounded to midnight.
 - Verification: `go test ./...`

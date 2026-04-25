@@ -11,3 +11,4 @@
 - Once local filtering exists, local sorting can usually live in the same projection layer; keeping both in one derived list avoids subtle mismatches between what the user sees and what edit/save actions target.
 - For resumable multi-phase flows, persisting phase-boundary snapshots is often the simplest reliable cutoff: it preserves meaningful progress without needing to serialize every in-phase cursor and timer.
 - When one metric intentionally excludes a behavior (like standalone practice from `Today`), the UI should surface the excluded behavior nearby instead of only documenting what the main metric means.
+- When adopting an algorithm that returns precise timestamps, rounding them away at the persistence boundary silently changes the learning behavior more than any parameter tweak would.
