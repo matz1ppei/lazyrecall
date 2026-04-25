@@ -95,4 +95,5 @@
 - Add flow: the Add screen now starts from `Word`, treats `Meaning` as optional when AI is available, and can auto-fill the rest of the card from that single word.
 - Add flow refinement: `Front` now triggers the same full-card generation path as `Fetch: Language`, so users can enter one word and review the completed card immediately.
 - Prompt clarity: AI card generation now explicitly asks for English hints and target-language examples, with English example translations.
+- Add language routing: word-first Add now uses the configured study language for the same AI card-generation path as `Fetch: Language`.
 - Verification: `go test ./...`

@@ -61,7 +61,7 @@ func New(db *sql.DB, aiClient ai.Client, cfg config.Config) *App {
 	return &App{
 		screen:    screenHome,
 		home:      NewHomeModel(db, aiClient, cfg),
-		add:       NewAddModel(db, aiClient),
+		add:       NewAddModel(db, aiClient, cfg),
 		review:    NewReviewModel(db),
 		fetch:     NewFetchModel(db, aiClient),
 		fetchLang: NewFetchLangModel(db, aiClient),
@@ -92,7 +92,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, a.home.Init()
 		case screenAdd:
-			a.add = NewAddModel(a.db, a.ai)
+			if cfg, err := config.Load(); err == nil {
+				a.cfg = cfg
+			}
+			a.add = NewAddModel(a.db, a.ai, a.cfg)
 			return a, a.add.Init()
 		case screenReview:
 			a.review = NewReviewModel(a.db)

@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 )
 
@@ -41,6 +42,7 @@ type msgDupCheck struct {
 type AddModel struct {
 	db                 *sql.DB
 	ai                 ai.Client
+	langName           string
 	step               addStep
 	inputs             [4]textinput.Model // front, back, hint, example
 	exampleTranslation string
@@ -51,7 +53,7 @@ type AddModel struct {
 	dupCards           []db.Card
 }
 
-func NewAddModel(database *sql.DB, aiClient ai.Client) AddModel {
+func NewAddModel(database *sql.DB, aiClient ai.Client, cfg config.Config) AddModel {
 	inputs := [4]textinput.Model{}
 	for i := range inputs {
 		inputs[i] = textinput.New()
@@ -63,10 +65,11 @@ func NewAddModel(database *sql.DB, aiClient ai.Client) AddModel {
 	inputs[3].Placeholder = "Example sentence (optional)"
 	inputs[0].Focus()
 	return AddModel{
-		db:     database,
-		ai:     aiClient,
-		step:   stepFront,
-		inputs: inputs,
+		db:       database,
+		ai:       aiClient,
+		langName: strings.TrimSpace(cfg.AutoAdd.LangName),
+		step:     stepFront,
+		inputs:   inputs,
 	}
 }
 
@@ -117,7 +120,7 @@ func (m AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dupCards = msg.cards
 		} else {
 			m.inputs[0].Blur()
-			if m.ai != nil {
+			if m.ai != nil && m.langName != "" {
 				m.loading = true
 				m.status = subtitleStyle.Render("Generating card details...")
 				return m, m.generateCardDetails()
@@ -152,7 +155,7 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.dupWarning = false
 			m.dupCards = nil
 			m.inputs[0].Blur()
-			if m.ai != nil {
+			if m.ai != nil && m.langName != "" {
 				m.loading = true
 				m.status = subtitleStyle.Render("Generating card details...")
 				return m, m.generateCardDetails()
@@ -198,6 +201,10 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.status = errorStyle.Render("Meaning cannot be empty without AI")
 					return m, nil
 				}
+				if m.langName == "" {
+					m.status = errorStyle.Render("Set Configure -> Auto-add language to auto-fill from a word")
+					return m, nil
+				}
 				m.loading = true
 				m.status = subtitleStyle.Render("Generating card details...")
 				return m, m.generateCardDetails()
@@ -225,6 +232,10 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "ctrl+g":
 		if m.step == stepBack && m.ai != nil && !m.loading {
+			if strings.TrimSpace(m.inputs[1].Value()) == "" && m.langName == "" {
+				m.status = errorStyle.Render("Set Configure -> Auto-add language to auto-fill from a word")
+				return m, nil
+			}
 			m.loading = true
 			m.status = subtitleStyle.Render("Generating card details...")
 			return m, m.generateCardDetails()
@@ -286,7 +297,7 @@ func (m AddModel) generateCardDetails() tea.Cmd {
 			}
 			return msgCardGenerated{card: cards[0]}
 		}
-		cards, err := aiClient.GenerateCardsForWords(context.Background(), "target language", []string{front})
+		cards, err := aiClient.GenerateCardsForWords(context.Background(), m.langName, []string{front})
 		if err != nil {
 			return msgCardGenerated{err: err}
 		}

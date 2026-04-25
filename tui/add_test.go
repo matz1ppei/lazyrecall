@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 )
 
@@ -19,7 +20,7 @@ func TestAddModelAutoGeneratesFromWordAfterFrontEntry(t *testing.T) {
 		CardBack: "dog",
 		CardHint: "pet",
 	}
-	m := NewAddModel(database, mockAI)
+	m := NewAddModel(database, mockAI, config.Config{AutoAdd: config.AutoAdd{LangName: "Spanish"}})
 	m.inputs[0].SetValue("perro")
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -63,7 +64,7 @@ func TestAddModelRequiresMeaningWithoutAI(t *testing.T) {
 	}
 	t.Cleanup(func() { database.Close() })
 
-	m := NewAddModel(database, nil)
+	m := NewAddModel(database, nil, config.Config{})
 	m.inputs[0].SetValue("perro")
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -97,7 +98,7 @@ func TestAddModelCtrlGGeneratesDetailsForKnownMeaning(t *testing.T) {
 	mockAI := &ai.MockClient{
 		CardHint: "memory hook",
 	}
-	m := NewAddModel(database, mockAI)
+	m := NewAddModel(database, mockAI, config.Config{AutoAdd: config.AutoAdd{LangName: "Spanish"}})
 	m.inputs[0].SetValue("perro")
 	m.inputs[1].SetValue("dog")
 	m.step = stepBack
@@ -135,7 +136,7 @@ func TestAddModelDuplicateContinueAlsoGeneratesFromWord(t *testing.T) {
 	mockAI := &ai.MockClient{
 		CardBack: "dog",
 	}
-	m := NewAddModel(database, mockAI)
+	m := NewAddModel(database, mockAI, config.Config{AutoAdd: config.AutoAdd{LangName: "Spanish"}})
 	m.dupWarning = true
 	m.dupCards = []db.Card{{Front: "perro", Back: "dog"}}
 	m.inputs[0].SetValue("perro")
@@ -157,5 +158,29 @@ func TestAddModelDuplicateContinueAlsoGeneratesFromWord(t *testing.T) {
 	}
 	if got.inputs[1].Value() != "dog" {
 		t.Fatalf("back = %q, want dog", got.inputs[1].Value())
+	}
+}
+
+func TestAddModelWithAIAndNoLanguageFallsBackToMeaningInput(t *testing.T) {
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	m := NewAddModel(database, &ai.MockClient{}, config.Config{})
+	m.inputs[0].SetValue("patineta")
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(AddModel)
+	if !got.loading || cmd == nil {
+		t.Fatal("expected duplicate-check command")
+	}
+
+	msg := cmd()
+	updated, cmd = got.Update(msg)
+	got = updated.(AddModel)
+	if got.step != stepBack {
+		t.Fatalf("step = %v, want back", got.step)
 	}
 }
