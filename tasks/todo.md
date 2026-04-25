@@ -64,6 +64,8 @@
 - [x] Let AI fill meaning/hint/example from a single word when available
 - [x] Add regression tests for the word-first Add flow
 - [x] Run the relevant test suite and review results
+- [x] Tighten AI card-generation prompts so hint/example languages stay consistent
+- [x] Run the relevant test suite and review results
 
 ## Review
 
@@ -92,4 +94,5 @@
 - Stats simplification: Stats now stays focused on streak, activity, and today's result, with lower-signal sections removed.
 - Add flow: the Add screen now starts from `Word`, treats `Meaning` as optional when AI is available, and can auto-fill the rest of the card from that single word.
 - Add flow refinement: `Front` now triggers the same full-card generation path as `Fetch: Language`, so users can enter one word and review the completed card immediately.
+- Prompt clarity: AI card generation now explicitly asks for English hints and target-language examples, with English example translations.
 - Verification: `go test ./...`
