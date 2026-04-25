@@ -53,3 +53,57 @@ func CountTodayReviewSessions(database *sql.DB) (int, error) {
 	).Scan(&count)
 	return count, err
 }
+
+// CountCompletedDailySessionsToday returns the number of Daily Sessions that ended today.
+func CountCompletedDailySessionsToday(database *sql.DB) (int, error) {
+	var count int
+	err := database.QueryRow(
+		`SELECT COUNT(*)
+		 FROM review_sessions
+		 WHERE mode = 'daily_session'
+		   AND ended_at IS NOT NULL
+		   AND date(ended_at, 'localtime') = date('now', 'localtime')`,
+	).Scan(&count)
+	return count, err
+}
+
+// GetRecentCompletedDailySessionCounts returns ended Daily Session counts keyed by local YYYY-MM-DD.
+func GetRecentCompletedDailySessionCounts(database *sql.DB, days int) (map[string]int, error) {
+	cutoff := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+	rows, err := database.Query(
+		`SELECT date(ended_at, 'localtime') AS day, COUNT(*)
+		 FROM review_sessions
+		 WHERE mode = 'daily_session'
+		   AND ended_at IS NOT NULL
+		   AND date(ended_at, 'localtime') >= ?
+		 GROUP BY date(ended_at, 'localtime')`,
+		cutoff,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var day string
+		var count int
+		if err := rows.Scan(&day, &count); err != nil {
+			return nil, err
+		}
+		result[day] = count
+	}
+	return result, rows.Err()
+}
+
+func GetReviewSessionDayNumber(database *sql.DB, sessionID int64) (int, error) {
+	var dayNo int
+	err := database.QueryRow(
+		`SELECT day_session_no FROM review_sessions WHERE id = ?`,
+		sessionID,
+	).Scan(&dayNo)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return dayNo, err
+}

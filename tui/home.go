@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ippei/lazyrecall/ai"
 	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
@@ -29,12 +30,19 @@ const (
 )
 
 const dailyReviewLimit = 100
+const (
+	dailySessionMinimumGoal = 1
+	dailySessionIdealGoal   = 2
+)
 
 type msgStats struct {
 	total           int
 	due             int
 	overdue         int
 	reviewedToday   int
+	completedToday  int
+	minimumWeekdays int
+	idealWeekdays   int
 	practiceToday   db.PracticeTodayStats
 	session         db.DailySession
 	resumeAvailable bool
@@ -73,6 +81,9 @@ type HomeModel struct {
 	due             int
 	overdue         int
 	reviewedToday   int
+	completedToday  int
+	minimumWeekdays int
+	idealWeekdays   int
 	practiceToday   db.PracticeTodayStats
 	statsReady      bool
 	autoAdding      bool
@@ -149,6 +160,9 @@ func (h HomeModel) loadStats() tea.Cmd {
 		if err != nil {
 			return msgStats{total: len(cards), due: due, overdue: overdue}
 		}
+		completedToday, _ := db.CountCompletedDailySessionsToday(database)
+		sessionCounts, _ := db.GetRecentCompletedDailySessionCounts(database, 7)
+		minimumWeekdays, idealWeekdays := summarizeWeeklySessionGoals(sessionCounts)
 		practiceToday, _ := db.GetTodayPracticeStats(database)
 		session, _ := db.GetTodaySession(database)
 		resumeAvailable := false
@@ -168,7 +182,9 @@ func (h HomeModel) loadStats() tea.Cmd {
 
 		return msgStats{
 			total: len(cards), due: due, overdue: overdue,
-			reviewedToday: reviewedToday, practiceToday: practiceToday, session: session, resumeAvailable: resumeAvailable,
+			reviewedToday: reviewedToday, completedToday: completedToday,
+			minimumWeekdays: minimumWeekdays, idealWeekdays: idealWeekdays,
+			practiceToday: practiceToday, session: session, resumeAvailable: resumeAvailable,
 			notifyFatigue: notifyFatigue, notifyBenchmark: notifyBenchmark,
 		}
 	}
@@ -181,6 +197,9 @@ func (h HomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		h.due = msg.due
 		h.overdue = msg.overdue
 		h.reviewedToday = msg.reviewedToday
+		h.completedToday = msg.completedToday
+		h.minimumWeekdays = msg.minimumWeekdays
+		h.idealWeekdays = msg.idealWeekdays
 		h.practiceToday = msg.practiceToday
 		h.session = msg.session
 		h.resumeAvailable = msg.resumeAvailable
@@ -633,22 +652,12 @@ func (h HomeModel) View() string {
 			b.WriteString(labelStyle.Render(fmt.Sprintf("Due now: %d", h.due)))
 		}
 		b.WriteString("\n")
-		b.WriteString(labelStyle.Render(fmt.Sprintf("Today: %d / %d reviewed   Remaining: %d", h.reviewedToday, dailyReviewLimit, remaining)))
-		if h.practiceToday.Runs > 0 {
-			b.WriteString("\n")
-			b.WriteString(labelStyle.Render(fmt.Sprintf("Standalone today: %d run(s), %d items, %d correct", h.practiceToday.Runs, h.practiceToday.Items, h.practiceToday.Correct)))
-		}
+		statusText, statusStyle := h.dailySessionStatus()
+		b.WriteString(statusStyle.Render(statusText))
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("Today counts saved review updates. Standalone is tracked separately below."))
+		b.WriteString(labelStyle.Render(fmt.Sprintf("Reviewed: %d / %d   Remaining: %d", h.reviewedToday, dailyReviewLimit, remaining)))
 		b.WriteString("\n")
-		check := func(done bool) string {
-			if done {
-				return "✓"
-			}
-			return " "
-		}
-		b.WriteString(labelStyle.Render(fmt.Sprintf("Session: Review [%s] Match [%s] Reverse [%s] Blank [%s]",
-			check(h.session.ReviewDone), check(h.session.MatchDone), check(h.session.ReverseDone), check(h.session.BlankDone))))
+		b.WriteString(helpStyle.Render(fmt.Sprintf("Last 7 days: minimum %d/7   ideal %d/7", h.minimumWeekdays, h.idealWeekdays)))
 		if h.resumeAvailable {
 			b.WriteString("\n")
 			b.WriteString(labelStyle.Render("Resume available: unfinished Daily Session detected"))
@@ -777,4 +786,30 @@ func (h HomeModel) View() string {
 	}
 
 	return b.String()
+}
+
+func (h HomeModel) dailySessionStatus() (string, lipgloss.Style) {
+	if h.completedToday >= dailySessionIdealGoal {
+		return fmt.Sprintf("Today: ideal reached (%d / %d Daily Sessions)", h.completedToday, dailySessionIdealGoal), idealStyle
+	}
+	if h.completedToday >= dailySessionMinimumGoal {
+		return fmt.Sprintf("Today: minimum reached. %d more for ideal.", dailySessionIdealGoal-h.completedToday), successStyle
+	}
+	return fmt.Sprintf("Today: start %d Daily Session to reach minimum.", dailySessionMinimumGoal-h.completedToday), labelStyle
+}
+
+func summarizeWeeklySessionGoals(sessionCounts map[string]int) (int, int) {
+	minimumDays := 0
+	idealDays := 0
+	for i := 0; i < 7; i++ {
+		day := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+		count := sessionCounts[day]
+		if count >= dailySessionMinimumGoal {
+			minimumDays++
+		}
+		if count >= dailySessionIdealGoal {
+			idealDays++
+		}
+	}
+	return minimumDays, idealDays
 }

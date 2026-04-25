@@ -214,9 +214,9 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 	err := db.QueryRow(`
 		SELECT
 			COUNT(*),
-			SUM(CASE WHEN r.reviewed_at IS NULL THEN 1 ELSE 0 END),
-			SUM(CASE WHEN r.reviewed_at IS NOT NULL AND r.stability < 21 THEN 1 ELSE 0 END),
-			SUM(CASE WHEN r.stability >= 21 THEN 1 ELSE 0 END)
+			COALESCE(SUM(CASE WHEN r.reviewed_at IS NULL THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN r.reviewed_at IS NOT NULL AND r.stability < 21 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN r.stability >= 21 THEN 1 ELSE 0 END), 0)
 		FROM cards c
 		LEFT JOIN reviews r ON r.card_id = c.id
 	`).Scan(&s.TotalCards, &s.NewCards, &s.LearningCards, &s.MatureCards)
@@ -265,12 +265,14 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 		return s, err
 	}
 
-	// streak: based on daily_sessions (any phase counts)
-	// date(date) でDATE型をYYYY-MM-DD文字列として取得する（ドライバのtime.Time変換を回避）
+	// streak: based on completed Daily Sessions (minimum goal = one completed session)
 	rows, err := db.Query(`
-		SELECT date(date) FROM daily_sessions
-		WHERE review_done = 1 OR match_done = 1 OR blank_done = 1
-		ORDER BY date DESC
+		SELECT date(ended_at, 'localtime')
+		FROM review_sessions
+		WHERE mode = 'daily_session'
+		  AND ended_at IS NOT NULL
+		GROUP BY date(ended_at, 'localtime')
+		ORDER BY date(ended_at, 'localtime') DESC
 		LIMIT 365
 	`)
 	if err != nil {

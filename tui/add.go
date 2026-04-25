@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/ai"
+	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 )
 
@@ -29,6 +30,11 @@ type msgHintGenerated struct {
 	err         error
 }
 
+type msgCardGenerated struct {
+	card ai.GeneratedCard
+	err  error
+}
+
 type msgDupCheck struct {
 	cards []db.Card
 }
@@ -36,6 +42,7 @@ type msgDupCheck struct {
 type AddModel struct {
 	db                 *sql.DB
 	ai                 ai.Client
+	langName           string
 	step               addStep
 	inputs             [4]textinput.Model // front, back, hint, example
 	exampleTranslation string
@@ -46,22 +53,23 @@ type AddModel struct {
 	dupCards           []db.Card
 }
 
-func NewAddModel(database *sql.DB, aiClient ai.Client) AddModel {
+func NewAddModel(database *sql.DB, aiClient ai.Client, cfg config.Config) AddModel {
 	inputs := [4]textinput.Model{}
 	for i := range inputs {
 		inputs[i] = textinput.New()
 		inputs[i].CharLimit = 512
 	}
-	inputs[0].Placeholder = "Front (question/word)"
-	inputs[1].Placeholder = "Back (answer/meaning)"
+	inputs[0].Placeholder = "Word"
+	inputs[1].Placeholder = "Meaning (optional with AI)"
 	inputs[2].Placeholder = "Hint (optional)"
 	inputs[3].Placeholder = "Example sentence (optional)"
 	inputs[0].Focus()
 	return AddModel{
-		db:     database,
-		ai:     aiClient,
-		step:   stepFront,
-		inputs: inputs,
+		db:       database,
+		ai:       aiClient,
+		langName: strings.TrimSpace(cfg.AutoAdd.LangName),
+		step:     stepFront,
+		inputs:   inputs,
 	}
 }
 
@@ -87,6 +95,24 @@ func (m AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case msgCardGenerated:
+		m.loading = false
+		if msg.err != nil {
+			m.status = errorStyle.Render(fmt.Sprintf("AI error: %v", msg.err))
+			return m, nil
+		}
+		m.inputs[1].SetValue(msg.card.Back)
+		m.inputs[2].SetValue(msg.card.Hint)
+		m.inputs[3].SetValue(msg.card.Example)
+		m.exampleTranslation = msg.card.ExampleTranslation
+		m.exampleWord = msg.card.ExampleWord
+		m.inputs[1].Blur()
+		m.inputs[2].Blur()
+		m.inputs[3].Blur()
+		m.step = stepConfirm
+		m.status = successStyle.Render("Generated card details.")
+		return m, nil
+
 	case msgDupCheck:
 		m.loading = false
 		if len(msg.cards) > 0 {
@@ -94,6 +120,11 @@ func (m AddModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.dupCards = msg.cards
 		} else {
 			m.inputs[0].Blur()
+			if m.ai != nil && m.langName != "" {
+				m.loading = true
+				m.status = subtitleStyle.Render("Generating card details...")
+				return m, m.generateCardDetails()
+			}
 			m.step = stepBack
 			m.status = ""
 			return m, m.inputs[1].Focus()
@@ -124,6 +155,11 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.dupWarning = false
 			m.dupCards = nil
 			m.inputs[0].Blur()
+			if m.ai != nil && m.langName != "" {
+				m.loading = true
+				m.status = subtitleStyle.Render("Generating card details...")
+				return m, m.generateCardDetails()
+			}
 			m.step = stepBack
 			m.status = ""
 			return m, m.inputs[1].Focus()
@@ -161,8 +197,17 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		case stepBack:
 			if strings.TrimSpace(m.inputs[1].Value()) == "" {
-				m.status = errorStyle.Render("Back cannot be empty")
-				return m, nil
+				if m.ai == nil {
+					m.status = errorStyle.Render("Meaning cannot be empty without AI")
+					return m, nil
+				}
+				if m.langName == "" {
+					m.status = errorStyle.Render("Set Configure -> Auto-add language to auto-fill from a word")
+					return m, nil
+				}
+				m.loading = true
+				m.status = subtitleStyle.Render("Generating card details...")
+				return m, m.generateCardDetails()
 			}
 			m.inputs[1].Blur()
 			m.step = stepHint
@@ -186,6 +231,15 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "ctrl+g":
+		if m.step == stepBack && m.ai != nil && !m.loading {
+			if strings.TrimSpace(m.inputs[1].Value()) == "" && m.langName == "" {
+				m.status = errorStyle.Render("Set Configure -> Auto-add language to auto-fill from a word")
+				return m, nil
+			}
+			m.loading = true
+			m.status = subtitleStyle.Render("Generating card details...")
+			return m, m.generateCardDetails()
+		}
 		if (m.step == stepHint || m.step == stepExample) && m.ai != nil && !m.loading {
 			m.loading = true
 			label := "hint"
@@ -214,9 +268,8 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "n":
 		if m.step == stepConfirm {
-			// go back to edit hint
-			m.step = stepHint
-			return m, m.inputs[2].Focus()
+			m.step = stepBack
+			return m, m.inputs[1].Focus()
 		}
 	}
 
@@ -227,6 +280,32 @@ func (m AddModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	return m, nil
+}
+
+func (m AddModel) generateCardDetails() tea.Cmd {
+	front := strings.TrimSpace(m.inputs[0].Value())
+	back := strings.TrimSpace(m.inputs[1].Value())
+	aiClient := m.ai
+	return func() tea.Msg {
+		if back != "" {
+			cards, err := aiClient.GenerateCardsFromWords(context.Background(), []ai.WordPair{{Front: front, Back: back}})
+			if err != nil {
+				return msgCardGenerated{err: err}
+			}
+			if len(cards) == 0 {
+				return msgCardGenerated{err: fmt.Errorf("empty AI response")}
+			}
+			return msgCardGenerated{card: cards[0]}
+		}
+		cards, err := aiClient.GenerateCardsForWords(context.Background(), m.langName, []string{front})
+		if err != nil {
+			return msgCardGenerated{err: err}
+		}
+		if len(cards) == 0 {
+			return msgCardGenerated{err: fmt.Errorf("empty AI response")}
+		}
+		return msgCardGenerated{card: cards[0]}
+	}
 }
 
 func (m AddModel) saveCard() tea.Cmd {
@@ -253,10 +332,10 @@ type msgSaveResult struct{ err error }
 func (m AddModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Add Card"))
+	b.WriteString(titleStyle.Render("Add Word"))
 	b.WriteString("\n\n")
 
-	stepLabels := []string{"Front", "Back", "Hint", "Example"}
+	stepLabels := []string{"Word", "Meaning", "Hint", "Example"}
 	for i, label := range stepLabels {
 		if addStep(i) < m.step || m.step == stepConfirm {
 			val := m.inputs[i].Value()
@@ -272,7 +351,9 @@ func (m AddModel) View() string {
 			b.WriteString(inputLabelStyle.Render(label + ":"))
 			b.WriteString("\n")
 			b.WriteString(m.inputs[i].View())
-			if (i == int(stepHint) || i == int(stepExample)) && m.ai != nil {
+			if i == int(stepBack) && m.ai != nil {
+				b.WriteString("\n" + helpStyle.Render("[enter] next / auto-fill  [ctrl+g] generate details with AI"))
+			} else if (i == int(stepHint) || i == int(stepExample)) && m.ai != nil {
 				b.WriteString("\n" + helpStyle.Render("[ctrl+g] generate with AI"))
 			}
 		} else {
@@ -292,9 +373,9 @@ func (m AddModel) View() string {
 		b.WriteString(helpStyle.Render("[c] continue anyway  [esc] edit front"))
 	} else if m.step == stepConfirm {
 		b.WriteString("\n")
-		b.WriteString(successStyle.Render("Save this card?"))
+		b.WriteString(successStyle.Render("Save this word card?"))
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("[y/enter] save  [n] edit hint  [esc] cancel"))
+		b.WriteString(helpStyle.Render("[y/enter] save  [n] edit meaning  [esc] cancel"))
 	} else if m.step < stepHint {
 		b.WriteString("\n" + helpStyle.Render("[enter] next  [esc] cancel"))
 	} else {

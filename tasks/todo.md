@@ -44,6 +44,28 @@
 - [x] Add hints to Brain Dump 3 in Daily Session
 - [x] Add or update regression coverage for Brain Dump 3 hints
 - [x] Run the relevant test suite and review results
+- [x] Reframe Daily Session progress around a minimum and ideal daily goal
+- [x] Count completed Daily Sessions for today and recent activity in Stats/Home
+- [x] Show minimum-goal success in green and ideal-goal success in blue
+- [x] Add regression tests for the new Daily Session goal visuals and counts
+- [x] Run the relevant test suite and review results
+- [x] Make the Home screen emphasize today's minimum/ideal Daily Session status
+- [x] Reduce extra Home-screen detail so the primary next action is easier to scan
+- [x] Add regression tests for the simplified Home summary
+- [x] Run the relevant test suite and review results
+- [x] Add a compact 7-day minimum/ideal attainment summary to Home
+- [x] Add regression tests for the weekly attainment summary
+- [x] Run the relevant test suite and review results
+- [x] Make the Daily Session completion screen reflect minimum/ideal goal outcomes
+- [x] Reduce Stats to a smaller set of high-signal sections
+- [x] Add regression tests for the simpler completion and Stats views
+- [x] Run the relevant test suite and review results
+- [x] Shift Add Card toward a word-first registration flow
+- [x] Let AI fill meaning/hint/example from a single word when available
+- [x] Add regression tests for the word-first Add flow
+- [x] Run the relevant test suite and review results
+- [x] Tighten AI card-generation prompts so hint/example languages stay consistent
+- [x] Run the relevant test suite and review results
 
 ## Review
 
@@ -62,4 +84,16 @@
 - Card list sorting: `List cards` now cycles through due/front/new/excluded sorting while preserving the current search/filter flow.
 - Expanded editing: card edit now includes `example_translation` and `example_word`, so Blank/Compose support text can be tuned directly.
 - Due precision: review due timestamps now keep FSRS time-of-day precision, so same-day short-term intervals are respected instead of being rounded to midnight.
+- Daily Session goals: Stats/Home now treat one completed Daily Session as the minimum line and two completed Daily Sessions as the ideal line.
+- Goal coloring: minimum-goal days stay green, while ideal-goal days are highlighted in blue in the Stats calendar and today's goal label.
+- Consistency: Daily Session streak/progress now use completed sessions (`ended_at`) rather than partial phase markers, so the goal view matches what users actually finished.
+- Stats wording: Streak and Activity now explicitly say they count completed Daily Sessions only, so the stricter display is easier to understand.
+- Home focus: the primary summary now leads with today's Daily Session status, while standalone and phase-detail noise stay out of the first screen.
+- Weekly visibility: Home now shows a single `Last 7 days` line for minimum/ideal attainment, giving quick progress feedback without reopening Stats.
+- Completion clarity: the Daily Session result screen now says `Minimum reached` or `Ideal reached`, so the day's stopping point matches Home.
+- Stats simplification: Stats now stays focused on streak, activity, and today's result, with lower-signal sections removed.
+- Add flow: the Add screen now starts from `Word`, treats `Meaning` as optional when AI is available, and can auto-fill the rest of the card from that single word.
+- Add flow refinement: `Front` now triggers the same full-card generation path as `Fetch: Language`, so users can enter one word and review the completed card immediately.
+- Prompt clarity: AI card generation now explicitly asks for English hints and target-language examples, with English example translations.
+- Add language routing: word-first Add now uses the configured study language for the same AI card-generation path as `Fetch: Language`.
 - Verification: `go test ./...`
