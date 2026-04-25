@@ -188,14 +188,14 @@ func TestListRandomCards(t *testing.T) {
 func TestListDueCards(t *testing.T) {
 	db := openTestDB(t)
 
-	// Card due today (default due_date = date('now'))
+	// Card due now (default due_date = datetime('now'))
 	id1, _ := CreateCard(db, "due", "back", "", "", "", "")
 	_, _ = GetOrCreateReview(db, id1)
 
-	// Card due tomorrow — update due_date to future
+	// Card due later today — should not be returned yet
 	id2, _ := CreateCard(db, "future", "back", "", "", "", "")
 	r2, _ := GetOrCreateReview(db, id2)
-	r2.DueDate = time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	r2.DueDate = time.Now().Add(1 * time.Hour).Format("2006-01-02 15:04:05")
 	if err := UpdateReview(db, r2); err != nil {
 		t.Fatalf("UpdateReview: %v", err)
 	}
@@ -209,6 +209,52 @@ func TestListDueCards(t *testing.T) {
 	}
 	if due[0].Front != "due" {
 		t.Errorf("expected 'due', got %q", due[0].Front)
+	}
+}
+
+func TestCountDueCardsUsesDatetimePrecision(t *testing.T) {
+	db := openTestDB(t)
+
+	nowID, _ := CreateCard(db, "now", "back", "", "", "", "")
+	laterID, _ := CreateCard(db, "later", "back", "", "", "", "")
+	_, _ = GetOrCreateReview(db, nowID)
+	later, _ := GetOrCreateReview(db, laterID)
+	later.DueDate = time.Now().Add(90 * time.Minute).Format("2006-01-02 15:04:05")
+	if err := UpdateReview(db, later); err != nil {
+		t.Fatalf("UpdateReview(later): %v", err)
+	}
+
+	count, err := CountDueCards(db)
+	if err != nil {
+		t.Fatalf("CountDueCards: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("CountDueCards = %d, want 1", count)
+	}
+}
+
+func TestCountOverdueCardsCountsPastDaysOnly(t *testing.T) {
+	db := openTestDB(t)
+
+	pastID, _ := CreateCard(db, "past", "back", "", "", "", "")
+	todayID, _ := CreateCard(db, "today", "back", "", "", "", "")
+	past, _ := GetOrCreateReview(db, pastID)
+	today, _ := GetOrCreateReview(db, todayID)
+	past.DueDate = time.Now().Add(-24 * time.Hour).Format("2006-01-02 15:04:05")
+	today.DueDate = time.Now().Add(-1 * time.Hour).Format("2006-01-02 15:04:05")
+	if err := UpdateReview(db, past); err != nil {
+		t.Fatalf("UpdateReview(past): %v", err)
+	}
+	if err := UpdateReview(db, today); err != nil {
+		t.Fatalf("UpdateReview(today): %v", err)
+	}
+
+	count, err := CountOverdueCards(db)
+	if err != nil {
+		t.Fatalf("CountOverdueCards: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("CountOverdueCards = %d, want 1", count)
 	}
 }
 
@@ -689,8 +735,39 @@ func TestCountReviewedTodayUsesSessionCompletionDay(t *testing.T) {
 	if stats.ReviewedToday != 1 {
 		t.Fatalf("GetReviewStats.ReviewedToday = %d, want 1", stats.ReviewedToday)
 	}
-	if stats.CorrectToday != 1 {
-		t.Fatalf("GetReviewStats.CorrectToday = %d, want 1", stats.CorrectToday)
+	if stats.CorrectToday != 0 {
+		t.Fatalf("GetReviewStats.CorrectToday = %d, want 0 without final saved rating", stats.CorrectToday)
+	}
+}
+
+func TestGetReviewStatsCorrectTodayUsesFinalDailySessionRating(t *testing.T) {
+	db := openTestDB(t)
+
+	cardID, _ := CreateCard(db, "front", "back", "", "", "", "")
+
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+	if err := InsertReviewEvent(db, sessionID, cardID, 1, 500, true); err != nil {
+		t.Fatalf("InsertReviewEvent: %v", err)
+	}
+	if err := EndReviewSession(db, sessionID); err != nil {
+		t.Fatalf("EndReviewSession: %v", err)
+	}
+	if err := ApplySessionResults(db, []SessionResult{{CardID: cardID, Rating: 0}}, sessionID); err != nil {
+		t.Fatalf("ApplySessionResults: %v", err)
+	}
+
+	stats, err := GetReviewStats(db)
+	if err != nil {
+		t.Fatalf("GetReviewStats: %v", err)
+	}
+	if stats.ReviewedToday != 1 {
+		t.Fatalf("GetReviewStats.ReviewedToday = %d, want 1", stats.ReviewedToday)
+	}
+	if stats.CorrectToday != 0 {
+		t.Fatalf("GetReviewStats.CorrectToday = %d, want 0", stats.CorrectToday)
 	}
 }
 

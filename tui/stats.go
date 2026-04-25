@@ -130,6 +130,8 @@ func (m StatsModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("  Daily Session and saved review updates count here."))
 	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("  Correct uses the final saved result (Daily Session Good / saved standalone Good)."))
+	b.WriteString("\n")
 	b.WriteString(labelStyle.Render(fmt.Sprintf("  Standalone practice: %d run(s), %d items, %d correct",
 		m.practice.Runs, m.practice.Items, m.practice.Correct)))
 	b.WriteString("\n")

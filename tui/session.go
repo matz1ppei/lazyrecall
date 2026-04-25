@@ -395,9 +395,10 @@ func (m SessionModel) startPhase(phase sessionPhase) (SessionModel, tea.Cmd) {
 	case sessionPhaseBrainDump3:
 		// BrainDump3 runs after Blank as the final recall check before FSRS scoring.
 		// Scores here do NOT influence FSRS — only Review/Match/ReverseReview/Blank outcomes do.
-		// No hints: BD3 is pure free recall, measuring retention without scaffolding.
+		// Hints show the first letter of all cards, matching BD2.
+		cards3 := extractCards(m.cards)
 		debuglog.Infof("daily_session phase started: braindump3")
-		m.brainDump3 = NewBrainDumpModel(extractCards(m.cards), "Brain Dump 3", "", onComplete)
+		m.brainDump3 = NewBrainDumpModel(cards3, "Brain Dump 3", firstLetterHints(cards3, nil), onComplete)
 		return m, tea.Batch(m.brainDump3.Init(), m.saveSnapshotCmd())
 	case sessionPhaseRetryReverse:
 		// RetryReverse shows wrong cards one more time. FSRS is already scored, so

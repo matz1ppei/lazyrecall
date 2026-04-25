@@ -204,7 +204,7 @@ func (m *ListModel) initEditInputs(card db.CardWithReview) {
 func (m ListModel) filteredCardIndices() []int {
 	indices := make([]int, 0, len(m.cards))
 	query := strings.ToLower(strings.TrimSpace(m.filterInput.Value()))
-	today := time.Now().Format("2006-01-02")
+	now := time.Now()
 	for i, card := range m.cards {
 		if query != "" {
 			front := strings.ToLower(card.Front)
@@ -216,7 +216,7 @@ func (m ListModel) filteredCardIndices() []int {
 		if m.filterExcluded && !m.excluded[strings.ToLower(card.Front)] {
 			continue
 		}
-		if m.filterDueOnly && (card.Review.DueDate == "" || card.Review.DueDate > today) {
+		if m.filterDueOnly && !isDueNow(card.Review.DueDate, now) {
 			continue
 		}
 		indices = append(indices, i)
@@ -535,6 +535,41 @@ func truncate(s string, n int) string {
 	return string(runes[:n-1]) + "…"
 }
 
+func parseDueTime(s string) time.Time {
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+func isDueNow(s string, now time.Time) bool {
+	if s == "" {
+		return false
+	}
+	due := parseDueTime(s)
+	if due.IsZero() {
+		return false
+	}
+	return !due.After(now)
+}
+
+func formatDueLabel(s string) string {
+	if s == "" {
+		return ""
+	}
+	due := parseDueTime(s)
+	if due.IsZero() {
+		return s
+	}
+	now := time.Now()
+	if due.Format("2006-01-02") == now.Format("2006-01-02") {
+		return due.Format("15:04")
+	}
+	return due.Format("01-02 15:04")
+}
+
 func (m ListModel) View() string {
 	var b strings.Builder
 
@@ -625,7 +660,7 @@ func (m ListModel) View() string {
 				truncate(c.Front, 12),
 				truncate(c.Back, 20),
 				truncate(c.Example, 45),
-				c.Review.DueDate,
+				formatDueLabel(c.Review.DueDate),
 			)
 			if i == m.cursor {
 				b.WriteString(inputLabelStyle.Render("> " + line))

@@ -128,7 +128,7 @@ lazyrecall/
 8. **Retry Reverse** — 1つでもミスしたカードを Reverse Review で追加1周（全問正解の場合はスキップ）
 
 - 全フェーズ正解（All-correct）→ `UpdateReview(Good)` でインターバルが進む
-- 1つでも不正解 → `UpdateReview(Again)` で due_date がリセットされ翌日また出る
+- 1つでも不正解 → `UpdateReview(Again)` で short-term interval を含む FSRS の次回時刻へ戻る
 
 ### 記録とFSRS更新の条件
 
@@ -153,6 +153,8 @@ lazyrecall/
 | New Cards | `reviewed_at IS NULL`（一度もレビューされていない） |
 | Learning Cards | `reviewed_at IS NOT NULL` かつ `stability < 21` |
 | Mature Cards | `stability >= 21` |
+
+`due_date` は内部的には日時で保持されるため、同じ日でも「今はまだ出さない」「30分後に再出題する」といった FSRS の短期スケジューリングが反映される。
 
 ## テスト
 

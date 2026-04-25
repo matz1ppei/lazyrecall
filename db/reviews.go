@@ -10,7 +10,7 @@ import (
 type Review struct {
 	ID          int64
 	CardID      int64
-	DueDate     string // "YYYY-MM-DD" — FSRS Due rounded to day
+	DueDate     string // "YYYY-MM-DD HH:MM:SS" (legacy rows may still be date-only)
 	Interval    int    // FSRS ScheduledDays; kept for backward compat
 	EaseFactor  float64
 	Repetitions int
@@ -57,7 +57,7 @@ func GetOrCreateReview(db *sql.DB, cardID int64) (Review, error) {
 		return Review{
 			ID:         id,
 			CardID:     cardID,
-			DueDate:    time.Now().Format("2006-01-02"),
+			DueDate:    time.Now().Format("2006-01-02 15:04:05"),
 			Interval:   1,
 			EaseFactor: 2.5,
 		}, nil
@@ -71,7 +71,7 @@ func GetOrCreateReview(db *sql.DB, cardID int64) (Review, error) {
 		r.LastRating = &v
 	}
 	if reviewedAt.Valid {
-		t, _ := time.Parse("2006-01-02 15:04:05", reviewedAt.String)
+		t, _ := time.ParseInLocation("2006-01-02 15:04:05", reviewedAt.String, time.Local)
 		r.ReviewedAt = &t
 	}
 	if lastReview.Valid {
@@ -81,9 +81,14 @@ func GetOrCreateReview(db *sql.DB, cardID int64) (Review, error) {
 	return r, nil
 }
 
-// parseDatetime handles both "2006-01-02 15:04:05" and "2006-01-02T15:04:05Z" SQLite formats.
+// parseDatetime handles SQLite datetime strings and legacy date-only values.
 func parseDatetime(s string) time.Time {
-	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05Z", time.RFC3339} {
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t
+		}
+	}
+	for _, layout := range []string{"2006-01-02T15:04:05Z", time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t
 		}
@@ -172,12 +177,12 @@ func ListAllCardsWithReview(db *sql.DB) ([]CardWithReview, error) {
 
 func CountDueCards(db *sql.DB) (int, error) {
 	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE due_date <= date('now', 'localtime')`).Scan(&n)
+	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE datetime(due_date) <= datetime('now', 'localtime')`).Scan(&n)
 	return n, err
 }
 
 func SetDueToday(db *sql.DB, cardIDs []int64) error {
-	today := time.Now().Format("2006-01-02")
+	today := time.Now().Format("2006-01-02 15:04:05")
 	for _, id := range cardIDs {
 		if _, err := db.Exec(`UPDATE reviews SET due_date = ? WHERE card_id = ?`, today, id); err != nil {
 			return err
@@ -188,7 +193,7 @@ func SetDueToday(db *sql.DB, cardIDs []int64) error {
 
 func CountOverdueCards(db *sql.DB) (int, error) {
 	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE due_date < date('now', 'localtime')`).Scan(&n)
+	err := db.QueryRow(`SELECT COUNT(*) FROM reviews WHERE datetime(due_date) < datetime(date('now', 'localtime'))`).Scan(&n)
 	return n, err
 }
 
@@ -254,22 +259,6 @@ func GetReviewStats(db *sql.DB) (ReviewStats, error) {
 				SELECT SUM(CASE WHEN r.last_rating = 4 THEN 1 ELSE 0 END)
 				FROM reviews r
 				WHERE date(r.reviewed_at) = date('now', 'localtime')
-				  AND NOT EXISTS (
-					SELECT 1
-					FROM review_events re
-					JOIN review_sessions rs ON rs.id = re.review_session_id
-					WHERE rs.ended_at IS NOT NULL
-					  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
-					  AND re.card_id = r.card_id
-				  )
-			), 0)
-			+
-			COALESCE((
-				SELECT SUM(CASE WHEN re.correct = 1 THEN 1 ELSE 0 END)
-				FROM review_events re
-				JOIN review_sessions rs ON rs.id = re.review_session_id
-				WHERE rs.ended_at IS NOT NULL
-				  AND date(rs.ended_at, 'localtime') = date('now', 'localtime')
 			), 0)
 	`).Scan(&s.CorrectToday)
 	if err != nil {
@@ -363,8 +352,8 @@ func ListDueCards(db *sql.DB, limit int) ([]CardWithReview, error) {
 		        r.stability, r.difficulty, r.fsrs_state, r.lapses, r.last_review
 		 FROM cards c
 		 JOIN reviews r ON r.card_id = c.id
-		 WHERE r.due_date <= date('now', 'localtime')
-		 ORDER BY r.due_date, c.id
+		 WHERE datetime(r.due_date) <= datetime('now', 'localtime')
+		 ORDER BY datetime(r.due_date), c.id
 		 LIMIT ?`,
 		limit,
 	)
@@ -415,7 +404,7 @@ func ReviewToSRS(r Review) srs.CardState {
 
 // ApplySRSResult writes a srs.Result back into a Review, including DueDate, Interval, and FSRS fields.
 func ApplySRSResult(r *Review, res srs.Result) {
-	r.DueDate = res.Due.Format("2006-01-02")
+	r.DueDate = res.Due.Format("2006-01-02 15:04:05")
 	r.Interval = res.ScheduledDays
 	r.Stability = res.Stability
 	r.Difficulty = res.Difficulty
