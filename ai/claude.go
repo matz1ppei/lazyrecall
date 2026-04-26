@@ -168,14 +168,15 @@ func (c *ClaudeClient) GenerateWordList(ctx context.Context, topic string, rankS
 
 func (c *ClaudeClient) GenerateCardsForWords(ctx context.Context, topic string, words []string) ([]GeneratedCard, error) {
 	wordsJSON, _ := json.Marshal(words)
+	supportLang := resolveSupportLanguage(topic)
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.ModelClaudeHaiku4_5,
 		MaxTokens: int64(300 * len(words)),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(profilePrefix(c.userProfile) + fmt.Sprintf(
-				`For each word listed from %s, generate: "back" (English translation/meaning), "hint" (a short memory mnemonic in English), "example" (one natural example sentence in the same language as the word), "example_translation" (English translation of the example sentence), "example_word" (the exact word form as it appears in the sentence — may be conjugated or inflected). `+
-					`Words: %s. Return ONLY a JSON array: [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<English translation of example>", "example_word": "<exact form in sentence>"}, ...]`,
-				topic, string(wordsJSON),
+				`For each word listed from %s, generate: "back" (%s translation/meaning), "hint" (a short memory mnemonic in %s), "example" (one natural example sentence in the same language as the word), "example_translation" (%s translation of the example sentence), "example_word" (the exact word form as it appears in the sentence — may be conjugated or inflected). `+
+					`Words: %s. Return ONLY a JSON array: [{"front": "<word>", "back": "<translation>", "hint": "<mnemonic>", "example": "<sentence>", "example_translation": "<translation of example>", "example_word": "<exact form in sentence>"}, ...]`,
+				topic, supportLang, supportLang, supportLang, string(wordsJSON),
 			))),
 		},
 	})
@@ -233,15 +234,16 @@ func (c *ClaudeClient) EvaluateTranslation(ctx context.Context, front, back, ori
 	return result.Feedback, result.OK, nil
 }
 
-func (c *ClaudeClient) GenerateCardsFromWords(ctx context.Context, words []WordPair) ([]GeneratedCard, error) {
+func (c *ClaudeClient) GenerateCardsFromWords(ctx context.Context, studyLang string, words []WordPair) ([]GeneratedCard, error) {
 	wordsJSON, _ := json.Marshal(words)
+	supportLang := resolveSupportLanguage(studyLang)
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.ModelClaudeHaiku4_5,
 		MaxTokens: int64(300 * len(words)),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(profilePrefix(c.userProfile) + fmt.Sprintf(
-				"For each word pair, add a short memory hint in English, one natural example sentence in the same language as the word, an English translation of that example sentence, and the exact word form as it appears in the sentence. Words: %s. Return ONLY a JSON array (same order): [{\"front\": ..., \"back\": ..., \"hint\": \"short mnemonic\", \"example\": \"example sentence\", \"example_translation\": \"English translation of example\", \"example_word\": \"exact word form in sentence\"}, ...].",
-				string(wordsJSON),
+				"For each word pair from %s, add a short memory hint in %s, one natural example sentence in the same language as the word, a %s translation of that example sentence, and the exact word form as it appears in the sentence. Words: %s. Return ONLY a JSON array (same order): [{\"front\": ..., \"back\": ..., \"hint\": \"short mnemonic\", \"example\": \"example sentence\", \"example_translation\": \"translation of example\", \"example_word\": \"exact word form in sentence\"}, ...].",
+				studyLang, supportLang, supportLang, string(wordsJSON),
 			))),
 		},
 	})

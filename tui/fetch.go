@@ -249,7 +249,7 @@ func (m FetchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.spinner.Tick,
 			func() tea.Msg {
 				t := time.Now()
-				cards, err := aiClient.GenerateCardsFromWords(context.Background(), words)
+				cards, err := aiClient.GenerateCardsFromWords(context.Background(), "", words)
 				return msgCardGenResult{
 					cards: cards, batchNum: batchNum, totalBatches: totalBatches,
 					wordStart: wordStart, wordEnd: wordEnd,
@@ -338,7 +338,7 @@ func (m FetchModel) startCardGen(topic string) (tea.Model, tea.Cmd) {
 
 		cmds = append(cmds, func() tea.Msg {
 			t := time.Now()
-			cards, err := aiClient.GenerateCardsFromWords(context.Background(), words)
+			cards, err := aiClient.GenerateCardsFromWords(context.Background(), "", words)
 			return msgCardGenResult{
 				cards: cards, batchNum: batchNum, totalBatches: tb,
 				wordStart: wordStart, wordEnd: wordEnd,

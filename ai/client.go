@@ -47,7 +47,7 @@ type Client interface {
 	GenerateCard(ctx context.Context, topic string) (front, back, hint string, err error)
 	GenerateCards(ctx context.Context, topic string, start, end int) ([]GeneratedCard, error)
 	GenerateWordList(ctx context.Context, topic string, rankStart, rankEnd int, exclude []string) ([]WordPair, error)
-	GenerateCardsFromWords(ctx context.Context, words []WordPair) ([]GeneratedCard, error)
+	GenerateCardsFromWords(ctx context.Context, studyLang string, words []WordPair) ([]GeneratedCard, error)
 	// GenerateCardsForWords generates full cards (back+hint+example) for words
 	// whose meanings are unknown — used with frequency dictionary input.
 	GenerateCardsForWords(ctx context.Context, topic string, words []string) ([]GeneratedCard, error)

@@ -75,7 +75,7 @@ func (m *MockClient) EvaluateTranslation(_ context.Context, _, _, _, _, _ string
 	return m.EvalFeedback, m.EvalOK, m.EvalErr
 }
 
-func (m *MockClient) GenerateCardsFromWords(_ context.Context, words []WordPair) ([]GeneratedCard, error) {
+func (m *MockClient) GenerateCardsFromWords(_ context.Context, _ string, words []WordPair) ([]GeneratedCard, error) {
 	if m.CardErr != nil {
 		return nil, m.CardErr
 	}

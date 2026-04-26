@@ -288,7 +288,7 @@ func (m AddModel) generateCardDetails() tea.Cmd {
 	aiClient := m.ai
 	return func() tea.Msg {
 		if back != "" {
-			cards, err := aiClient.GenerateCardsFromWords(context.Background(), []ai.WordPair{{Front: front, Back: back}})
+			cards, err := aiClient.GenerateCardsFromWords(context.Background(), m.langName, []ai.WordPair{{Front: front, Back: back}})
 			if err != nil {
 				return msgCardGenerated{err: err}
 			}

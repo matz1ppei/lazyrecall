@@ -15,3 +15,4 @@
 - If a daily goal is defined around "finished sessions", every related metric and calendar view should key off completion timestamps, not starts or partial phase markers.
 - When a workflow is effectively "register one word", the primary form should allow one-word input and treat the rest as optional or auto-fillable instead of forcing full-card entry up front.
 - If generated card fields intentionally use different languages, the prompt should spell out each field's language separately; leaving that implicit invites inconsistent outputs.
+- When support-language rules depend on the study language, the AI entrypoints need that study language passed explicitly; otherwise one code path will silently drift from the others.
