@@ -66,6 +66,15 @@
 - [x] Run the relevant test suite and review results
 - [x] Tighten AI card-generation prompts so hint/example languages stay consistent
 - [x] Run the relevant test suite and review results
+- [x] Rebalance Daily Session card selection toward due-first review with a capped number of new cards
+- [x] Limit new cards to at most 2 per Daily Session while keeping overdue/learning cards first
+- [x] Add regression tests for the new Daily Session card mix
+- [x] Run the relevant test suite and review results
+- [x] Add a suspicious-card detector based on low-noise example/front mismatches
+- [x] Expose suspicious cards from Tools in a Card List-style screen
+- [x] Reuse inline card editing so suspicious cards can be fixed in place
+- [x] Add regression tests for suspicious-card detection and navigation
+- [x] Run the relevant test suite and review results
 
 ## Review
 
@@ -97,4 +106,6 @@
 - Prompt clarity: AI card generation now explicitly asks for English hints and target-language examples, with English example translations.
 - Add language routing: word-first Add now uses the configured study language for the same AI card-generation path as `Fetch: Language`.
 - Support language policy: study-language-aware generation now uses `English -> Japanese` and `others -> English` for meanings, hints, and example translations.
+- Session mix: Daily Session now fills overdue and learning due cards first, then review due cards, and only then adds up to 2 new cards.
+- Suspicious card review: Tools now opens a dedicated suspicious-card list that flags low-noise example/front mismatches and lets them be fixed inline with the existing edit UI.
 - Verification: `go test ./...`

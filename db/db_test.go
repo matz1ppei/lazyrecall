@@ -212,6 +212,208 @@ func TestListDueCards(t *testing.T) {
 	}
 }
 
+func TestListSuspiciousCards(t *testing.T) {
+	db := openTestDB(t)
+
+	mismatchID, _ := CreateCardWithReview(db, "conmigo", "with me", "", "Ven conmigo.", "", "acompanadme")
+	missingFrontID, _ := CreateCardWithReview(db, "bonjour", "hello", "", "Salut tout le monde.", "", "bonjour")
+	normalID, _ := CreateCardWithReview(db, "hola", "hello", "", "Hola, amigo.", "", "hola")
+
+	cards, err := ListSuspiciousCards(db)
+	if err != nil {
+		t.Fatalf("ListSuspiciousCards: %v", err)
+	}
+	if len(cards) != 2 {
+		t.Fatalf("expected 2 suspicious cards, got %d", len(cards))
+	}
+
+	got := map[int64]string{}
+	for _, card := range cards {
+		got[card.Card.ID] = card.Reason
+	}
+
+	if got[mismatchID] != "example word mismatch" {
+		t.Fatalf("mismatch reason = %q", got[mismatchID])
+	}
+	if got[missingFrontID] != "front missing in example" {
+		t.Fatalf("missing-front reason = %q", got[missingFrontID])
+	}
+	if _, ok := got[normalID]; ok {
+		t.Fatalf("normal card should not be suspicious: %+v", got)
+	}
+}
+
+func TestSelectSessionCardsPrioritizesDueBeforeNew(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now()
+
+	overdueID, _ := CreateCard(db, "overdue", "back", "", "", "", "")
+	learningID, _ := CreateCard(db, "learning", "back", "", "", "", "")
+	reviewID, _ := CreateCard(db, "review", "back", "", "", "", "")
+	new1ID, _ := CreateCard(db, "new-1", "back", "", "", "", "")
+	new2ID, _ := CreateCard(db, "new-2", "back", "", "", "", "")
+
+	for _, id := range []int64{overdueID, learningID, reviewID, new1ID, new2ID} {
+		if _, err := GetOrCreateReview(db, id); err != nil {
+			t.Fatalf("GetOrCreateReview(%d): %v", id, err)
+		}
+	}
+
+	if _, err := db.Exec(
+		`UPDATE reviews SET due_date = ?, reviewed_at = ?, stability = 5 WHERE card_id = ?`,
+		now.Add(-24*time.Hour).Format("2006-01-02 15:04:05"),
+		now.Add(-48*time.Hour).Format("2006-01-02 15:04:05"),
+		overdueID,
+	); err != nil {
+		t.Fatalf("update overdue: %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE reviews SET due_date = ?, reviewed_at = ?, stability = 5 WHERE card_id = ?`,
+		now.Add(-1*time.Hour).Format("2006-01-02 15:04:05"),
+		now.Add(-24*time.Hour).Format("2006-01-02 15:04:05"),
+		learningID,
+	); err != nil {
+		t.Fatalf("update learning: %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE reviews SET due_date = ?, reviewed_at = ?, stability = 30 WHERE card_id = ?`,
+		now.Add(-30*time.Minute).Format("2006-01-02 15:04:05"),
+		now.Add(-72*time.Hour).Format("2006-01-02 15:04:05"),
+		reviewID,
+	); err != nil {
+		t.Fatalf("update review: %v", err)
+	}
+
+	cards, err := SelectSessionCards(db, 3)
+	if err != nil {
+		t.Fatalf("SelectSessionCards: %v", err)
+	}
+	if len(cards) != 3 {
+		t.Fatalf("len(cards) = %d, want 3", len(cards))
+	}
+	want := []string{"overdue", "learning", "review"}
+	for i, front := range want {
+		if cards[i].Front != front {
+			t.Fatalf("cards[%d].Front = %q, want %q", i, cards[i].Front, front)
+		}
+	}
+}
+
+func TestSelectSessionCardsCapsNewCardsPerSession(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now()
+
+	dueID, _ := CreateCard(db, "due-learning", "back", "", "", "", "")
+	if _, err := GetOrCreateReview(db, dueID); err != nil {
+		t.Fatalf("GetOrCreateReview(due): %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE reviews SET due_date = ?, reviewed_at = ?, stability = 5 WHERE card_id = ?`,
+		now.Add(-1*time.Hour).Format("2006-01-02 15:04:05"),
+		now.Add(-24*time.Hour).Format("2006-01-02 15:04:05"),
+		dueID,
+	); err != nil {
+		t.Fatalf("update due: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		id, _ := CreateCard(db, fmt.Sprintf("new-%d", i), "back", "", "", "", "")
+		if _, err := GetOrCreateReview(db, id); err != nil {
+			t.Fatalf("GetOrCreateReview(new-%d): %v", i, err)
+		}
+		if _, err := db.Exec(
+			`UPDATE reviews SET due_date = ?, reviewed_at = NULL WHERE card_id = ?`,
+			now.Add(24*time.Hour).Format("2006-01-02 15:04:05"),
+			id,
+		); err != nil {
+			t.Fatalf("update new-%d: %v", i, err)
+		}
+	}
+
+	for i := 0; i < 3; i++ {
+		id, _ := CreateCard(db, fmt.Sprintf("review-%d", i), "back", "", "", "", "")
+		if _, err := GetOrCreateReview(db, id); err != nil {
+			t.Fatalf("GetOrCreateReview(review-%d): %v", i, err)
+		}
+		if _, err := db.Exec(
+			`UPDATE reviews SET due_date = ?, reviewed_at = ?, stability = 30 WHERE card_id = ?`,
+			now.Add(24*time.Hour).Format("2006-01-02 15:04:05"),
+			now.Add(-72*time.Hour).Format("2006-01-02 15:04:05"),
+			id,
+		); err != nil {
+			t.Fatalf("update review-%d: %v", i, err)
+		}
+	}
+
+	cards, err := SelectSessionCards(db, 6)
+	if err != nil {
+		t.Fatalf("SelectSessionCards: %v", err)
+	}
+	if len(cards) != 6 {
+		t.Fatalf("len(cards) = %d, want 6", len(cards))
+	}
+
+	newCount := 0
+	for _, c := range cards {
+		if c.Review.ReviewedAt == nil {
+			newCount++
+		}
+	}
+	if newCount != 2 {
+		t.Fatalf("newCount = %d, want 2", newCount)
+	}
+}
+
+func TestSelectSessionCardsCapsNewCardsEvenWhenNewAreDueNow(t *testing.T) {
+	db := openTestDB(t)
+	now := time.Now()
+
+	dueID, _ := CreateCard(db, "due-learning", "back", "", "", "", "")
+	if _, err := GetOrCreateReview(db, dueID); err != nil {
+		t.Fatalf("GetOrCreateReview(due): %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE reviews SET due_date = ?, reviewed_at = ?, stability = 5 WHERE card_id = ?`,
+		now.Add(-1*time.Hour).Format("2006-01-02 15:04:05"),
+		now.Add(-24*time.Hour).Format("2006-01-02 15:04:05"),
+		dueID,
+	); err != nil {
+		t.Fatalf("update due: %v", err)
+	}
+
+	for i := 0; i < 8; i++ {
+		id, _ := CreateCard(db, fmt.Sprintf("new-due-%d", i), "back", "", "", "", "")
+		if _, err := GetOrCreateReview(db, id); err != nil {
+			t.Fatalf("GetOrCreateReview(new-due-%d): %v", i, err)
+		}
+		if _, err := db.Exec(
+			`UPDATE reviews SET due_date = ?, reviewed_at = NULL WHERE card_id = ?`,
+			now.Add(-5*time.Minute).Format("2006-01-02 15:04:05"),
+			id,
+		); err != nil {
+			t.Fatalf("update new-due-%d: %v", i, err)
+		}
+	}
+
+	cards, err := SelectSessionCards(db, 6)
+	if err != nil {
+		t.Fatalf("SelectSessionCards: %v", err)
+	}
+	if len(cards) != 3 {
+		t.Fatalf("len(cards) = %d, want 3 (1 due + 2 new)", len(cards))
+	}
+
+	newCount := 0
+	for _, c := range cards {
+		if c.Review.ReviewedAt == nil {
+			newCount++
+		}
+	}
+	if newCount != 2 {
+		t.Fatalf("newCount = %d, want 2", newCount)
+	}
+}
+
 func TestCountDueCardsUsesDatetimePrecision(t *testing.T) {
 	db := openTestDB(t)
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ippei/lazyrecall/config"
 	"github.com/ippei/lazyrecall/db"
 )
@@ -83,5 +84,32 @@ func TestSummarizeWeeklySessionGoals(t *testing.T) {
 	}
 	if ideal != 2 {
 		t.Fatalf("ideal = %d, want 2", ideal)
+	}
+}
+
+func TestHomeToolsIncludesSuspiciousCardsEntry(t *testing.T) {
+	m := NewHomeModel(nil, nil, config.Config{})
+	m.state = homeStateTools
+
+	view := m.View()
+	if !strings.Contains(view, "Suspicious cards") {
+		t.Fatalf("expected suspicious cards menu entry, got: %s", view)
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if cmd == nil {
+		t.Fatal("expected navigation command")
+	}
+	got := updated.(HomeModel)
+	if got.state != homeStateTools {
+		t.Fatalf("expected state to stay in tools until nav message, got %v", got.state)
+	}
+	msg := cmd()
+	gotoMsg, ok := msg.(MsgGotoScreen)
+	if !ok {
+		t.Fatalf("expected MsgGotoScreen, got %T", msg)
+	}
+	if gotoMsg.Target != screenSuspiciousList {
+		t.Fatalf("target = %v, want %v", gotoMsg.Target, screenSuspiciousList)
 	}
 }

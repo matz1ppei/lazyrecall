@@ -348,17 +348,22 @@ func CountReviewedToday(db *sql.DB) (int, error) {
 }
 
 func ListDueCards(db *sql.DB, limit int) ([]CardWithReview, error) {
-	rows, err := db.Query(
-		`SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.example_word, c.created_at,
+	query := `SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.example_word, c.created_at,
 		        r.id, r.card_id, r.due_date, r.interval, r.ease_factor, r.repetitions, r.last_rating, r.reviewed_at,
 		        r.stability, r.difficulty, r.fsrs_state, r.lapses, r.last_review
 		 FROM cards c
 		 JOIN reviews r ON r.card_id = c.id
 		 WHERE datetime(r.due_date) <= datetime('now', 'localtime')
-		 ORDER BY datetime(r.due_date), c.id
-		 LIMIT ?`,
-		limit,
+		 ORDER BY datetime(r.due_date), c.id`
+	var (
+		rows *sql.Rows
+		err  error
 	)
+	if limit > 0 {
+		rows, err = db.Query(query+` LIMIT ?`, limit)
+	} else {
+		rows, err = db.Query(query)
+	}
 	if err != nil {
 		return nil, err
 	}

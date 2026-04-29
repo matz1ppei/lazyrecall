@@ -398,6 +398,8 @@ func (h HomeModel) handleToolsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return h, nil
 	case "a":
 		return h, func() tea.Msg { return MsgGotoScreen{Target: screenAdd} }
+	case "s":
+		return h, func() tea.Msg { return MsgGotoScreen{Target: screenSuspiciousList} }
 	}
 	return h, nil
 }
@@ -702,6 +704,7 @@ func (h HomeModel) View() string {
 			keyStyle.Render("[f]") + menuItemStyle.Render(" Fetch: Language (dict)"),
 			keyStyle.Render("[t]") + menuItemStyle.Render(" Fetch: Topic (AI)"),
 			keyStyle.Render("[i]") + menuItemStyle.Render(" Import CSV"),
+			keyStyle.Render("[s]") + menuItemStyle.Render(" Suspicious cards"),
 			keyStyle.Render("[g]") + menuItemStyle.Render(" Generate translations"),
 			keyStyle.Render("[x]") + menuItemStyle.Render(" Deduplicate"),
 		}

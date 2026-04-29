@@ -18,6 +18,11 @@ type Card struct {
 	CreatedAt          time.Time
 }
 
+type SuspiciousCard struct {
+	CardWithReview
+	Reason string
+}
+
 // CountCards returns the total number of cards in the database.
 // Used at startup to detect the first-run (zero-card) state for onboarding.
 func CountCards(database *sql.DB) (int, error) {
@@ -170,6 +175,63 @@ func ListCardsWithReviewByIDs(db *sql.DB, ids []int64) ([]CardWithReview, error)
 	return result, nil
 }
 
+func ListSuspiciousCards(db *sql.DB) ([]SuspiciousCard, error) {
+	rows, err := db.Query(
+		`SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.example_word, c.created_at,
+		        COALESCE(r.id,0), COALESCE(r.card_id,0), COALESCE(r.due_date,''), COALESCE(r.interval,1),
+		        COALESCE(r.ease_factor,2.5), COALESCE(r.repetitions,0), r.last_rating, r.reviewed_at,
+		        COALESCE(r.stability,0), COALESCE(r.difficulty,0), COALESCE(r.fsrs_state,0),
+		        COALESCE(r.lapses,0), r.last_review
+		 FROM cards c
+		 LEFT JOIN reviews r ON r.card_id = c.id
+		 WHERE (
+		     c.example_word != '' AND LOWER(c.example_word) != LOWER(c.front)
+		 ) OR (
+		     c.example != '' AND INSTR(LOWER(c.example), LOWER(c.front)) = 0
+		 )
+		 ORDER BY c.id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cards []SuspiciousCard
+	for rows.Next() {
+		var c SuspiciousCard
+		var createdAt string
+		var lastRating sql.NullInt64
+		var reviewedAt sql.NullString
+		var lastReview sql.NullString
+		if err := rows.Scan(
+			&c.Card.ID, &c.Front, &c.Back, &c.Hint, &c.Example, &c.Card.ExampleTranslation, &c.Card.ExampleWord, &createdAt,
+			&c.Review.ID, &c.Review.CardID, &c.Review.DueDate,
+			&c.Review.Interval, &c.Review.EaseFactor, &c.Review.Repetitions,
+			&lastRating, &reviewedAt,
+			&c.Review.Stability, &c.Review.Difficulty, &c.Review.FSRSState,
+			&c.Review.Lapses, &lastReview,
+		); err != nil {
+			return nil, err
+		}
+		c.Card.CreatedAt, _ = parseDBTime(createdAt)
+		scanReview(&c.Review, &lastRating, &reviewedAt, &lastReview)
+		c.Reason = SuspiciousReason(c.Card)
+		cards = append(cards, c)
+	}
+	return cards, rows.Err()
+}
+
+func SuspiciousReason(card Card) string {
+	reasons := make([]string, 0, 2)
+	if card.ExampleWord != "" && !strings.EqualFold(card.ExampleWord, card.Front) {
+		reasons = append(reasons, "example word mismatch")
+	}
+	if card.Example != "" && !strings.Contains(strings.ToLower(card.Example), strings.ToLower(card.Front)) {
+		reasons = append(reasons, "front missing in example")
+	}
+	return strings.Join(reasons, "; ")
+}
+
 func FindCardsByFront(db *sql.DB, front string) ([]Card, error) {
 	rows, err := db.Query(
 		`SELECT id, front, back, hint, example, example_translation, example_word, created_at FROM cards WHERE LOWER(front) = LOWER(?)`,
@@ -318,32 +380,138 @@ func ListRandomCardsExcluding(database *sql.DB, n int, excludeIDs []int64) ([]Ca
 	return cards, rows.Err()
 }
 
+const maxNewCardsPerSession = 2
+
 // SelectSessionCards returns up to limit cards for a daily session.
-// Due cards are prioritized (sorted by due date); remaining slots are filled with random cards.
+// Overdue and learning due cards come first; new cards are capped per session.
 func SelectSessionCards(database *sql.DB, limit int) ([]CardWithReview, error) {
-	due, err := ListDueCards(database, limit)
+	due, err := ListDueCards(database, 0)
 	if err != nil {
 		return nil, err
 	}
-	if len(due) >= limit {
-		return due, nil
-	}
-	excludeIDs := make([]int64, len(due))
-	for i, c := range due {
-		excludeIDs[i] = c.Card.ID
-	}
-	random, err := ListRandomCardsExcluding(database, limit-len(due), excludeIDs)
-	if err != nil {
-		return due, nil
-	}
-	for _, c := range random {
-		r, err := GetOrCreateReview(database, c.ID)
-		if err != nil {
-			continue
+	selected := make([]CardWithReview, 0, limit)
+	excluded := make(map[int64]bool, limit)
+
+	appendCards := func(cards []CardWithReview) {
+		for _, c := range cards {
+			if len(selected) >= limit || excluded[c.Card.ID] {
+				continue
+			}
+			selected = append(selected, c)
+			excluded[c.Card.ID] = true
 		}
-		due = append(due, CardWithReview{Card: c, Review: r})
 	}
-	return due, nil
+
+	var overdue, learningDue, reviewDue []CardWithReview
+	startOfToday := time.Now().Format("2006-01-02 00:00:00")
+	for _, c := range due {
+		switch {
+		case c.Review.ReviewedAt == nil:
+			// Brand-new cards are handled by the capped "new" slot later.
+			continue
+		case c.Review.DueDate < startOfToday:
+			overdue = append(overdue, c)
+		case c.Review.ReviewedAt != nil && c.Review.Stability < 21:
+			learningDue = append(learningDue, c)
+		default:
+			reviewDue = append(reviewDue, c)
+		}
+	}
+
+	appendCards(overdue)
+	appendCards(learningDue)
+	appendCards(reviewDue)
+	if len(selected) >= limit {
+		return selected[:limit], nil
+	}
+
+	excludeIDs := make([]int64, 0, len(excluded))
+	for id := range excluded {
+		excludeIDs = append(excludeIDs, id)
+	}
+
+	newLimit := limit - len(selected)
+	if newLimit > maxNewCardsPerSession {
+		newLimit = maxNewCardsPerSession
+	}
+	if newLimit > 0 {
+		newCards, err := listRandomCardsWithReviewExcluding(database, newLimit, excludeIDs, true)
+		if err == nil {
+			appendCards(newCards)
+			excludeIDs = excludeIDs[:0]
+			for id := range excluded {
+				excludeIDs = append(excludeIDs, id)
+			}
+		}
+	}
+	if len(selected) >= limit {
+		return selected[:limit], nil
+	}
+
+	random, err := listRandomCardsWithReviewExcluding(database, limit-len(selected), excludeIDs, false)
+	if err != nil {
+		return selected, nil
+	}
+	appendCards(random)
+	return selected, nil
+}
+
+func listRandomCardsWithReviewExcluding(database *sql.DB, n int, excludeIDs []int64, newOnly bool) ([]CardWithReview, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, 0, len(excludeIDs))
+	args := make([]any, 0, len(excludeIDs)+1)
+	for _, id := range excludeIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+
+	query := `SELECT c.id, c.front, c.back, c.hint, c.example, c.example_translation, c.example_word, c.created_at,
+		         r.id, r.card_id, r.due_date, r.interval, r.ease_factor, r.repetitions, r.last_rating, r.reviewed_at,
+		         r.stability, r.difficulty, r.fsrs_state, r.lapses, r.last_review
+		  FROM cards c
+		  JOIN reviews r ON r.card_id = c.id
+		  WHERE 1 = 1`
+	if len(placeholders) > 0 {
+		query += ` AND c.id NOT IN (` + strings.Join(placeholders, ",") + `)`
+	}
+	if newOnly {
+		query += ` AND r.reviewed_at IS NULL`
+	} else {
+		query += ` AND r.reviewed_at IS NOT NULL`
+	}
+	query += ` ORDER BY RANDOM() LIMIT ?`
+	args = append(args, n)
+
+	rows, err := database.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []CardWithReview
+	for rows.Next() {
+		var cwr CardWithReview
+		var createdAt string
+		var lastRating sql.NullInt64
+		var reviewedAt sql.NullString
+		var lastReview sql.NullString
+		if err := rows.Scan(
+			&cwr.Card.ID, &cwr.Front, &cwr.Back, &cwr.Hint, &cwr.Example, &cwr.Card.ExampleTranslation, &cwr.Card.ExampleWord, &createdAt,
+			&cwr.Review.ID, &cwr.Review.CardID, &cwr.Review.DueDate,
+			&cwr.Review.Interval, &cwr.Review.EaseFactor, &cwr.Review.Repetitions,
+			&lastRating, &reviewedAt,
+			&cwr.Review.Stability, &cwr.Review.Difficulty, &cwr.Review.FSRSState,
+			&cwr.Review.Lapses, &lastReview,
+		); err != nil {
+			return nil, err
+		}
+		cwr.Card.CreatedAt, _ = parseDBTime(createdAt)
+		scanReview(&cwr.Review, &lastRating, &reviewedAt, &lastReview)
+		result = append(result, cwr)
+	}
+	return result, rows.Err()
 }
 
 // ListCardsWithTranslation returns cards that have both example and example_translation set, in random order.

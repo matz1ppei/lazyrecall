@@ -28,6 +28,7 @@ const (
 
 type msgListCards struct {
 	cards []db.CardWithReview
+	mode  listMode
 }
 
 type msgDeleteDone struct{ err error }
@@ -51,11 +52,20 @@ const (
 	listSortExcluded
 )
 
+type listMode int
+
+const (
+	listModeAll listMode = iota
+	listModeSuspicious
+)
+
 type ListModel struct {
 	db                *sql.DB
 	ai                ai.Client
+	mode              listMode
 	state             listState
 	cards             []db.CardWithReview
+	suspiciousReasons map[int64]string
 	excluded          map[string]bool
 	cursor            int
 	offset            int
@@ -80,12 +90,20 @@ func NewListModel(database *sql.DB, aiClient ai.Client) ListModel {
 	filterInput.CharLimit = 128
 	filterInput.Width = 24
 	return ListModel{
-		db:          database,
-		ai:          aiClient,
-		state:       listStateLoading,
-		filterInput: filterInput,
-		sortMode:    listSortNewest,
+		db:                database,
+		ai:                aiClient,
+		mode:              listModeAll,
+		state:             listStateLoading,
+		filterInput:       filterInput,
+		sortMode:          listSortNewest,
+		suspiciousReasons: make(map[int64]string),
 	}
+}
+
+func NewSuspiciousListModel(database *sql.DB, aiClient ai.Client) ListModel {
+	m := NewListModel(database, aiClient)
+	m.mode = listModeSuspicious
+	return m
 }
 
 func loadExcludedCmd() tea.Cmd {
@@ -96,15 +114,8 @@ func loadExcludedCmd() tea.Cmd {
 }
 
 func (m ListModel) Init() tea.Cmd {
-	database := m.db
 	return tea.Batch(
-		func() tea.Msg {
-			cards, err := db.ListAllCardsWithReview(database)
-			if err != nil {
-				return msgListCards{cards: nil}
-			}
-			return msgListCards{cards: cards}
-		},
+		m.reloadCmd(),
 		loadExcludedCmd(),
 	)
 }
@@ -112,11 +123,22 @@ func (m ListModel) Init() tea.Cmd {
 func (m ListModel) reloadCmd() tea.Cmd {
 	database := m.db
 	return func() tea.Msg {
+		if m.mode == listModeSuspicious {
+			suspicious, err := db.ListSuspiciousCards(database)
+			if err != nil {
+				return msgListCards{mode: m.mode}
+			}
+			cards := make([]db.CardWithReview, 0, len(suspicious))
+			for _, card := range suspicious {
+				cards = append(cards, card.CardWithReview)
+			}
+			return msgListCards{cards: cards, mode: m.mode}
+		}
 		cards, err := db.ListAllCardsWithReview(database)
 		if err != nil {
-			return msgListCards{cards: nil}
+			return msgListCards{mode: m.mode}
 		}
-		return msgListCards{cards: cards}
+		return msgListCards{cards: cards, mode: m.mode}
 	}
 }
 
@@ -124,6 +146,13 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case msgListCards:
 		m.cards = msg.cards
+		if msg.mode == listModeSuspicious {
+			reasons := make(map[int64]string, len(msg.cards))
+			for _, card := range msg.cards {
+				reasons[card.Card.ID] = db.SuspiciousReason(card.Card)
+			}
+			m.suspiciousReasons = reasons
+		}
 		if len(m.cards) == 0 {
 			m.state = listStateEmpty
 		} else {
@@ -573,7 +602,7 @@ func formatDueLabel(s string) string {
 func (m ListModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("Card List"))
+	b.WriteString(titleStyle.Render(m.title()))
 	b.WriteString("\n\n")
 
 	switch m.state {
@@ -581,7 +610,7 @@ func (m ListModel) View() string {
 		b.WriteString(subtitleStyle.Render("Loading..."))
 
 	case listStateEmpty:
-		b.WriteString(subtitleStyle.Render("No cards registered yet."))
+		b.WriteString(subtitleStyle.Render(m.emptyMessage()))
 		b.WriteString("\n\n")
 		b.WriteString(helpStyle.Render("[esc] back"))
 
@@ -641,7 +670,11 @@ func (m ListModel) View() string {
 		b.WriteString(helpStyle.Render("[/] search  [o] excluded only  [u] due only  [s] sort  [c] clear filters"))
 		b.WriteString("\n\n")
 
-		b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-3s %-12s %-20s %-45s %s", "ID", " x", "Front", "Back", "Example", "Due")))
+		if m.mode == listModeSuspicious {
+			b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-14s %-18s %-38s %s", "ID", "Front", "Example Word", "Example", "Reason")))
+		} else {
+			b.WriteString(subtitleStyle.Render(fmt.Sprintf("  %-4s %-3s %-12s %-20s %-45s %s", "ID", " x", "Front", "Back", "Example", "Due")))
+		}
 		b.WriteString("\n")
 
 		end := m.offset + listPageSize
@@ -650,18 +683,29 @@ func (m ListModel) View() string {
 		}
 		for i := m.offset; i < end; i++ {
 			c := m.cards[filtered[i]]
-			mark := "   "
-			if m.excluded[strings.ToLower(c.Front)] {
-				mark = "[x]"
+			line := ""
+			if m.mode == listModeSuspicious {
+				line = fmt.Sprintf("%-4d %-14s %-18s %-38s %s",
+					c.Card.ID,
+					truncate(c.Front, 14),
+					truncate(c.Card.ExampleWord, 18),
+					truncate(c.Example, 38),
+					truncate(m.suspiciousReasons[c.Card.ID], 28),
+				)
+			} else {
+				mark := "   "
+				if m.excluded[strings.ToLower(c.Front)] {
+					mark = "[x]"
+				}
+				line = fmt.Sprintf("%-4d %s %-12s %-20s %-45s %s",
+					c.Card.ID,
+					mark,
+					truncate(c.Front, 12),
+					truncate(c.Back, 20),
+					truncate(c.Example, 45),
+					formatDueLabel(c.Review.DueDate),
+				)
 			}
-			line := fmt.Sprintf("%-4d %s %-12s %-20s %-45s %s",
-				c.Card.ID,
-				mark,
-				truncate(c.Front, 12),
-				truncate(c.Back, 20),
-				truncate(c.Example, 45),
-				formatDueLabel(c.Review.DueDate),
-			)
 			if i == m.cursor {
 				b.WriteString(inputLabelStyle.Render("> " + line))
 			} else {
@@ -699,4 +743,18 @@ func (m ListModel) View() string {
 	}
 
 	return b.String()
+}
+
+func (m ListModel) title() string {
+	if m.mode == listModeSuspicious {
+		return "Suspicious Cards"
+	}
+	return "Card List"
+}
+
+func (m ListModel) emptyMessage() string {
+	if m.mode == listModeSuspicious {
+		return "No suspicious cards found."
+	}
+	return "No cards registered yet."
 }
