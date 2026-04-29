@@ -75,6 +75,12 @@
 - [x] Reuse inline card editing so suspicious cards can be fixed in place
 - [x] Add regression tests for suspicious-card detection and navigation
 - [x] Run the relevant test suite and review results
+- [x] Fix Daily Session day numbering so fatigue analysis uses completed Daily Sessions only
+- [x] Add structured Daily Session fatigue-analysis tables for card mix and per-phase metrics
+- [x] Save Daily Session mix, phase metrics, and final pass counts without changing study flow
+- [x] Retarget fatigue-analysis notifications to completed Daily Session totals
+- [x] Add regression tests for fatigue-analysis persistence and counting
+- [x] Run the relevant test suite and review results
 
 ## Review
 
@@ -108,4 +114,5 @@
 - Support language policy: study-language-aware generation now uses `English -> Japanese` and `others -> English` for meanings, hints, and example translations.
 - Session mix: Daily Session now fills overdue and learning due cards first, then review due cards, and only then adds up to 2 new cards.
 - Suspicious card review: Tools now opens a dedicated suspicious-card list that flags low-noise example/front mismatches and lets them be fixed inline with the existing edit UI.
+- Fatigue analysis foundation: Daily Session analysis now keys off completed Daily Sessions, stores selected-card mix plus per-phase metrics, and no longer treats all started sessions as equally valid fatigue samples.
 - Verification: `go test ./...`

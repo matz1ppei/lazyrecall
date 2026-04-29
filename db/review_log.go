@@ -67,6 +67,17 @@ func CountCompletedDailySessionsToday(database *sql.DB) (int, error) {
 	return count, err
 }
 
+func CountCompletedDailySessionsTotal(database *sql.DB) (int, error) {
+	var count int
+	err := database.QueryRow(
+		`SELECT COUNT(*)
+		 FROM review_sessions
+		 WHERE mode = 'daily_session'
+		   AND ended_at IS NOT NULL`,
+	).Scan(&count)
+	return count, err
+}
+
 // GetRecentCompletedDailySessionCounts returns ended Daily Session counts keyed by local YYYY-MM-DD.
 func GetRecentCompletedDailySessionCounts(database *sql.DB, days int) (map[string]int, error) {
 	cutoff := time.Now().AddDate(0, 0, -days).Format("2006-01-02")

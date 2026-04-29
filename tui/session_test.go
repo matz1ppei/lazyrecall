@@ -98,6 +98,42 @@ func TestSessionMsgMarkDoneClearsSnapshot(t *testing.T) {
 	}
 }
 
+func TestSessionInitUsesCompletedDailySessionsForDayNumber(t *testing.T) {
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	if _, err := db.CreateCardWithReview(database, "alpha", "A", "", "", "", ""); err != nil {
+		t.Fatalf("CreateCardWithReview: %v", err)
+	}
+	completedID, err := db.StartReviewSession(database, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession(completed): %v", err)
+	}
+	if _, err := database.Exec(`UPDATE review_sessions SET ended_at = datetime('now') WHERE id = ?`, completedID); err != nil {
+		t.Fatalf("UPDATE completed session: %v", err)
+	}
+	if _, err := db.StartReviewSession(database, "daily_session", 9); err != nil {
+		t.Fatalf("StartReviewSession(incomplete): %v", err)
+	}
+
+	model := NewSessionModel(database, nil)
+	cmd := model.Init()
+	if cmd == nil {
+		t.Fatal("expected init command")
+	}
+	msg := cmd()
+	ready, ok := msg.(msgSessionReady)
+	if !ok {
+		t.Fatalf("expected msgSessionReady, got %T", msg)
+	}
+	if ready.daySessionNo != 2 {
+		t.Fatalf("daySessionNo = %d, want 2", ready.daySessionNo)
+	}
+}
+
 func TestSessionDoneViewShowsMinimumReached(t *testing.T) {
 	model := NewSessionModel(nil, nil)
 	model.phase = sessionPhaseDone

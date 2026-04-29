@@ -14,7 +14,7 @@ type SessionResult struct {
 }
 
 // ApplySessionResults updates all review rows for a Daily Session in one transaction.
-func ApplySessionResults(database *sql.DB, results []SessionResult, sessionID int64) error {
+func ApplySessionResults(database *sql.DB, results []SessionResult, sessionID int64, finalPassCount int, retryCardCount int) error {
 	tx, err := database.Begin()
 	if err != nil {
 		return err
@@ -45,6 +45,9 @@ func ApplySessionResults(database *sql.DB, results []SessionResult, sessionID in
 	}
 
 	if sessionID != 0 {
+		if err := saveDailySessionFinalCountsTx(tx, sessionID, finalPassCount, retryCardCount); err != nil {
+			return fmt.Errorf("save daily session final counts %d: %w", sessionID, err)
+		}
 		if _, err := tx.Exec(
 			`UPDATE review_sessions SET ended_at = ? WHERE id = ?`,
 			now.UTC().Format("2006-01-02 15:04:05"), sessionID,
