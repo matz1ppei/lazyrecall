@@ -253,3 +253,80 @@ func TestListEditViewShowsExpandedExampleFields(t *testing.T) {
 		t.Fatalf("expected Example Word field, got: %s", view)
 	}
 }
+
+func TestSuspiciousListViewShowsReasonColumn(t *testing.T) {
+	m := NewSuspiciousListModel(nil, nil)
+	m.state = listStateNormal
+	m.cards = []db.CardWithReview{{
+		Card: db.Card{
+			ID:          1,
+			Front:       "conmigo",
+			Back:        "with me",
+			Example:     "Por favor, acompañadme hasta la siguiente parada.",
+			ExampleWord: "acompañadme",
+		},
+	}}
+	m.suspiciousReasons = map[int64]string{1: "example word mismatch; front missing in example"}
+
+	view := m.View()
+	if !strings.Contains(view, "Suspicious Cards") {
+		t.Fatalf("expected suspicious title, got: %s", view)
+	}
+	if !strings.Contains(view, "Reason") {
+		t.Fatalf("expected reason column, got: %s", view)
+	}
+	if !strings.Contains(view, "example word mismatch") {
+		t.Fatalf("expected suspicious reason, got: %s", view)
+	}
+}
+
+func TestSuspiciousListEditFixRemovesCardAfterReload(t *testing.T) {
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	_, err = db.CreateCardWithReview(database, "conmigo", "with me", "", "Por favor, acompañadme hasta la siguiente parada.", "", "acompañadme")
+	if err != nil {
+		t.Fatalf("CreateCardWithReview: %v", err)
+	}
+
+	m := NewSuspiciousListModel(database, nil)
+	initMsg := m.reloadCmd()()
+	updated, _ := m.Update(initMsg)
+	model := updated.(ListModel)
+	if len(model.cards) != 1 {
+		t.Fatalf("expected 1 suspicious card, got %d", len(model.cards))
+	}
+
+	model.initEditInputs(model.cards[0])
+	model.state = listStateEdit
+	model.editInputs[3].SetValue("Ven conmigo a la estación.")
+	model.editInputs[5].SetValue("conmigo")
+	model.editFocus = 5
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if cmd == nil {
+		t.Fatal("expected save command")
+	}
+	doneMsg := cmd()
+	done, ok := doneMsg.(msgUpdateDone)
+	if !ok {
+		t.Fatalf("expected msgUpdateDone, got %T", doneMsg)
+	}
+	if done.err != nil {
+		t.Fatalf("save returned err: %v", done.err)
+	}
+
+	afterSave := updated.(ListModel)
+	reloadMsg := afterSave.reloadCmd()()
+	updated, _ = afterSave.Update(reloadMsg)
+	finalModel := updated.(ListModel)
+	if finalModel.state != listStateEmpty {
+		t.Fatalf("expected suspicious list to become empty, got state %v", finalModel.state)
+	}
+	if !strings.Contains(finalModel.View(), "No suspicious cards found.") {
+		t.Fatalf("expected empty suspicious message, got: %s", finalModel.View())
+	}
+}

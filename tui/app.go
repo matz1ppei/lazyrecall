@@ -18,6 +18,7 @@ const (
 	screenFetch
 	screenFetchLang
 	screenList
+	screenSuspiciousList
 	screenStats
 	screenMatch
 	screenBlank
@@ -44,6 +45,7 @@ type App struct {
 	fetch         FetchModel
 	fetchLang     FetchLangModel
 	list          ListModel
+	suspicious    ListModel
 	stats         StatsModel
 	match         MatchModel
 	blank         BlankModel
@@ -59,17 +61,18 @@ type App struct {
 
 func New(db *sql.DB, aiClient ai.Client, cfg config.Config) *App {
 	return &App{
-		screen:    screenHome,
-		home:      NewHomeModel(db, aiClient, cfg),
-		add:       NewAddModel(db, aiClient, cfg),
-		review:    NewReviewModel(db),
-		fetch:     NewFetchModel(db, aiClient),
-		fetchLang: NewFetchLangModel(db, aiClient),
-		list:      NewListModel(db, aiClient),
-		stats:     NewStatsModel(db),
-		db:        db,
-		ai:        aiClient,
-		cfg:       cfg,
+		screen:     screenHome,
+		home:       NewHomeModel(db, aiClient, cfg),
+		add:        NewAddModel(db, aiClient, cfg),
+		review:     NewReviewModel(db),
+		fetch:      NewFetchModel(db, aiClient),
+		fetchLang:  NewFetchLangModel(db, aiClient),
+		list:       NewListModel(db, aiClient),
+		suspicious: NewSuspiciousListModel(db, aiClient),
+		stats:      NewStatsModel(db),
+		db:         db,
+		ai:         aiClient,
+		cfg:        cfg,
 	}
 }
 
@@ -112,6 +115,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenList:
 			a.list = NewListModel(a.db, a.ai)
 			return a, a.list.Init()
+		case screenSuspiciousList:
+			a.suspicious = NewSuspiciousListModel(a.db, a.ai)
+			return a, a.suspicious.Init()
 		case screenStats:
 			a.stats = NewStatsModel(a.db)
 			return a, a.stats.Init()
@@ -189,6 +195,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated = m.(ListModel)
 		a.list = updated
 		cmd = c
+	case screenSuspiciousList:
+		var updated ListModel
+		m, c := a.suspicious.Update(msg)
+		updated = m.(ListModel)
+		a.suspicious = updated
+		cmd = c
 	case screenStats:
 		var updated StatsModel
 		m, c := a.stats.Update(msg)
@@ -251,6 +263,8 @@ func (a *App) View() string {
 		return a.fetchLang.View()
 	case screenList:
 		return a.list.View()
+	case screenSuspiciousList:
+		return a.suspicious.View()
 	case screenStats:
 		return a.stats.View()
 	case screenMatch:
