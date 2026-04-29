@@ -170,9 +170,9 @@ func (h HomeModel) loadStats() tea.Cmd {
 			resumeAvailable = snapshot.Date == time.Now().Format("2006-01-02") && len(snapshot.CardIDs) > 0
 		}
 
-		totalSessions, _ := db.CountAllReviewSessions(database)
-		clearedAt, _ := db.GetMilestoneInt(database, "fatigue_cleared_at_count")
-		notifyFatigue := totalSessions >= 20 && (totalSessions-clearedAt) >= 20
+		completedDailySessions, _ := db.CountCompletedDailySessionsTotal(database)
+		clearedAt, _ := db.GetMilestoneInt(database, "fatigue_cleared_at_completed_daily_count")
+		notifyFatigue := completedDailySessions >= 20 && (completedDailySessions-clearedAt) >= 20
 
 		firstBenchmark, _ := db.FirstBenchmarkRunAt(database)
 		benchmarkCleared, _ := db.GetMilestoneInt(database, "benchmark_cleared")
@@ -331,8 +331,8 @@ func (h HomeModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (h HomeModel) resetFatigueNotificationCmd() tea.Cmd {
 	database := h.db
 	return func() tea.Msg {
-		total, _ := db.CountAllReviewSessions(database)
-		_ = db.SetMilestoneInt(database, "fatigue_cleared_at_count", total)
+		total, _ := db.CountCompletedDailySessionsTotal(database)
+		_ = db.SetMilestoneInt(database, "fatigue_cleared_at_completed_daily_count", total)
 		return msgNotificationReset{}
 	}
 }

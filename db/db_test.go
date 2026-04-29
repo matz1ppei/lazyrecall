@@ -751,7 +751,7 @@ func TestApplySessionResultsUpdatesReviewedTodayAndEndsSession(t *testing.T) {
 	err = ApplySessionResults(db, []SessionResult{
 		{CardID: cardID1, Rating: 4},
 		{CardID: cardID2, Rating: 0},
-	}, sessionID)
+	}, sessionID, 1, 1)
 	if err != nil {
 		t.Fatalf("ApplySessionResults: %v", err)
 	}
@@ -801,7 +801,7 @@ func TestApplySessionResultsRollsBackOnError(t *testing.T) {
 	err = ApplySessionResults(db, []SessionResult{
 		{CardID: cardID, Rating: 4},
 		{CardID: 999999, Rating: 0},
-	}, sessionID)
+	}, sessionID, 1, 0)
 	if err == nil {
 		t.Fatal("expected ApplySessionResults to fail for missing card")
 	}
@@ -869,7 +869,7 @@ func TestCountReviewedTodayAddsStandaloneAndSessionCountsWithoutDoubleCounting(t
 		t.Fatalf("EndReviewSession: %v", err)
 	}
 
-	if err := ApplySessionResults(db, []SessionResult{{CardID: sessionCardID, Rating: 4}}, sessionID); err != nil {
+	if err := ApplySessionResults(db, []SessionResult{{CardID: sessionCardID, Rating: 4}}, sessionID, 1, 0); err != nil {
 		t.Fatalf("ApplySessionResults: %v", err)
 	}
 
@@ -957,7 +957,7 @@ func TestGetReviewStatsCorrectTodayUsesFinalDailySessionRating(t *testing.T) {
 	if err := EndReviewSession(db, sessionID); err != nil {
 		t.Fatalf("EndReviewSession: %v", err)
 	}
-	if err := ApplySessionResults(db, []SessionResult{{CardID: cardID, Rating: 0}}, sessionID); err != nil {
+	if err := ApplySessionResults(db, []SessionResult{{CardID: cardID, Rating: 0}}, sessionID, 0, 1); err != nil {
 		t.Fatalf("ApplySessionResults: %v", err)
 	}
 
@@ -1038,6 +1038,142 @@ func TestCompletedDailySessionCountsDriveGoalsAndStreak(t *testing.T) {
 	if stats.Streak != 2 {
 		t.Fatalf("GetReviewStats.Streak = %d, want 2", stats.Streak)
 	}
+}
+
+func TestCountCompletedDailySessionsTotal(t *testing.T) {
+	db := openTestDB(t)
+
+	completed, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession(completed): %v", err)
+	}
+	incomplete, err := StartReviewSession(db, "daily_session", 2)
+	if err != nil {
+		t.Fatalf("StartReviewSession(incomplete): %v", err)
+	}
+	otherMode, err := StartReviewSession(db, "review", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession(otherMode): %v", err)
+	}
+	if _, err := db.Exec(
+		`UPDATE review_sessions SET ended_at = datetime('now') WHERE id IN (?, ?)`,
+		completed, otherMode,
+	); err != nil {
+		t.Fatalf("UPDATE review_sessions: %v", err)
+	}
+
+	count, err := CountCompletedDailySessionsTotal(db)
+	if err != nil {
+		t.Fatalf("CountCompletedDailySessionsTotal: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("CountCompletedDailySessionsTotal = %d, want 1", count)
+	}
+
+	_ = incomplete
+}
+
+func TestClassifyDailySessionCards(t *testing.T) {
+	now := time.Now()
+	cards := []CardWithReview{
+		{Card: Card{ID: 1}, Review: Review{DueDate: now.Add(-24 * time.Hour).Format("2006-01-02 15:04:05"), ReviewedAt: ptrTime(now.Add(-48 * time.Hour)), Stability: 5}},
+		{Card: Card{ID: 2}, Review: Review{DueDate: now.Add(-1 * time.Hour).Format("2006-01-02 15:04:05"), ReviewedAt: ptrTime(now.Add(-24 * time.Hour)), Stability: 3}},
+		{Card: Card{ID: 3}, Review: Review{DueDate: now.Add(2 * time.Hour).Format("2006-01-02 15:04:05"), ReviewedAt: ptrTime(now.Add(-72 * time.Hour)), Stability: 30}},
+		{Card: Card{ID: 4}, Review: Review{DueDate: now.Format("2006-01-02 15:04:05"), ReviewedAt: nil}},
+	}
+
+	mix := ClassifyDailySessionCards(cards)
+	if mix.SelectedCount != 4 || mix.OverdueCount != 1 || mix.LearningCount != 1 || mix.ReviewCount != 1 || mix.NewCount != 1 {
+		t.Fatalf("unexpected mix: %+v", mix)
+	}
+}
+
+func TestSaveDailySessionMixAndPhaseMetrics(t *testing.T) {
+	db := openTestDB(t)
+
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+	mix := DailySessionMix{
+		SelectedCount:  12,
+		OverdueCount:   3,
+		LearningCount:  4,
+		ReviewCount:    3,
+		NewCount:       2,
+		FinalPassCount: 9,
+		RetryCardCount: 3,
+	}
+	if err := SaveDailySessionMix(db, sessionID, mix); err != nil {
+		t.Fatalf("SaveDailySessionMix: %v", err)
+	}
+	if err := SaveDailySessionPhaseMetric(db, sessionID, DailySessionPhaseMetric{
+		Phase:           "blank",
+		ItemCount:       10,
+		CorrectCount:    8,
+		DurationSeconds: 75,
+		Skipped:         false,
+	}); err != nil {
+		t.Fatalf("SaveDailySessionPhaseMetric: %v", err)
+	}
+
+	var selected, overdue, learning, review, newCount, finalPass, retryCount int
+	if err := db.QueryRow(
+		`SELECT selected_count, overdue_count, learning_count, review_count, new_count, final_pass_count, retry_card_count
+		 FROM daily_session_mix WHERE review_session_id = ?`,
+		sessionID,
+	).Scan(&selected, &overdue, &learning, &review, &newCount, &finalPass, &retryCount); err != nil {
+		t.Fatalf("SELECT daily_session_mix: %v", err)
+	}
+	if selected != 12 || overdue != 3 || learning != 4 || review != 3 || newCount != 2 || finalPass != 9 || retryCount != 3 {
+		t.Fatalf("unexpected daily_session_mix row: %d %d %d %d %d %d %d", selected, overdue, learning, review, newCount, finalPass, retryCount)
+	}
+
+	var phase string
+	var itemCount, correctCount, durationSeconds, skipped int
+	if err := db.QueryRow(
+		`SELECT phase, item_count, correct_count, duration_seconds, skipped
+		 FROM daily_session_phase_metrics WHERE review_session_id = ?`,
+		sessionID,
+	).Scan(&phase, &itemCount, &correctCount, &durationSeconds, &skipped); err != nil {
+		t.Fatalf("SELECT daily_session_phase_metrics: %v", err)
+	}
+	if phase != "blank" || itemCount != 10 || correctCount != 8 || durationSeconds != 75 || skipped != 0 {
+		t.Fatalf("unexpected phase metric row: %q %d %d %d %d", phase, itemCount, correctCount, durationSeconds, skipped)
+	}
+}
+
+func TestApplySessionResultsStoresDailySessionFinalCounts(t *testing.T) {
+	db := openTestDB(t)
+
+	cardID1, _ := CreateCard(db, "front1", "back1", "", "", "", "")
+	cardID2, _ := CreateCard(db, "front2", "back2", "", "", "", "")
+	sessionID, err := StartReviewSession(db, "daily_session", 1)
+	if err != nil {
+		t.Fatalf("StartReviewSession: %v", err)
+	}
+	if err := SaveDailySessionMix(db, sessionID, DailySessionMix{SelectedCount: 2, NewCount: 2}); err != nil {
+		t.Fatalf("SaveDailySessionMix: %v", err)
+	}
+
+	if err := ApplySessionResults(db, []SessionResult{{CardID: cardID1, Rating: 4}, {CardID: cardID2, Rating: 0}}, sessionID, 1, 1); err != nil {
+		t.Fatalf("ApplySessionResults: %v", err)
+	}
+
+	var finalPass, retryCount int
+	if err := db.QueryRow(
+		`SELECT final_pass_count, retry_card_count FROM daily_session_mix WHERE review_session_id = ?`,
+		sessionID,
+	).Scan(&finalPass, &retryCount); err != nil {
+		t.Fatalf("SELECT daily_session_mix final counts: %v", err)
+	}
+	if finalPass != 1 || retryCount != 1 {
+		t.Fatalf("final counts = %d/%d, want 1/1", finalPass, retryCount)
+	}
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
 }
 
 func TestPracticeRunLoggingAndQueries(t *testing.T) {

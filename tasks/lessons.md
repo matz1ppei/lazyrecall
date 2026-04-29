@@ -18,3 +18,4 @@
 - When support-language rules depend on the study language, the AI entrypoints need that study language passed explicitly; otherwise one code path will silently drift from the others.
 - If a session is meant to stay manageable, cap new cards at the selection layer first; changing FSRS itself is a much heavier lever than most workload issues require.
 - For data-quality review tools, start with a small set of concrete heuristics that users can verify quickly; broad "smart" suspicion rules create more cleanup work than they save.
+- Fatigue analysis needs the same unit of measurement at every step; if the notification, session numbering, and stored metrics count different things, the conclusions look quantitative but are not trustworthy.
