@@ -432,6 +432,7 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 		m.reviewDone = true
 		m.reviewCorrectIDs = m.review.correctIDs
 		debuglog.Infof("daily_session phase completed: review correct=%d/%d", len(m.reviewCorrectIDs), len(m.cards))
+		m.persistPhaseMetric("review", len(m.cards), len(m.reviewCorrectIDs), false)
 		// MarkReviewDone is called here (before BrainDump1) so that the daily
 		// session progress is recorded regardless of what happens in BrainDump.
 		markCmd := func() tea.Msg {
@@ -441,17 +442,19 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			return msgSessionProgressMarked{phase: "review"}
 		}
 		m2, initCmd := m.startPhase(sessionPhaseBrainDump1)
-		return m2, tea.Batch(markCmd, m.savePhaseMetricCmd("review", len(m.cards), len(m.reviewCorrectIDs), false), initCmd)
+		return m2, tea.Batch(markCmd, initCmd)
 
 	case sessionPhaseBrainDump1:
 		// BrainDump1 result is intentionally ignored for FSRS — advance straight to Match.
 		debuglog.Infof("daily_session phase completed: braindump1 recalled=%d/%d", m.brainDump1.matchCount, m.brainDump1.totalCount)
+		m.persistPhaseMetric("braindump1", m.brainDump1.totalCount, m.brainDump1.matchCount, false)
 		m2, initCmd := m.startPhase(sessionPhaseMatch)
-		return m2, tea.Batch(m.savePhaseMetricCmd("braindump1", m.brainDump1.totalCount, m.brainDump1.matchCount, false), initCmd)
+		return m2, initCmd
 
 	case sessionPhaseMatch:
 		m.matchDone = true
 		debuglog.Infof("daily_session phase completed: match wrong=%d", len(m.match.wrongCardIDs))
+		m.persistPhaseMetric("match", len(m.cards), len(m.cards)-len(m.match.wrongCardIDs), false)
 		markCmd := func() tea.Msg {
 			if err := db.MarkMatchDone(database); err != nil {
 				return msgSessionProgressMarked{phase: "match", err: err.Error()}
@@ -459,12 +462,13 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			return msgSessionProgressMarked{phase: "match"}
 		}
 		m2, initCmd := m.startPhase(sessionPhaseReverseReview)
-		return m2, tea.Batch(markCmd, m.savePhaseMetricCmd("match", len(m.cards), len(m.cards)-len(m.match.wrongCardIDs), false), initCmd)
+		return m2, tea.Batch(markCmd, initCmd)
 
 	case sessionPhaseReverseReview:
 		m.reverseReviewDone = true
 		m.reverseCorrectIDs = m.reverseReview.correctIDs
 		debuglog.Infof("daily_session phase completed: reverse_review correct=%d/%d", len(m.reverseCorrectIDs), len(m.cards))
+		m.persistPhaseMetric("reverse_review", len(m.cards), len(m.reverseCorrectIDs), false)
 		markCmd := func() tea.Msg {
 			if err := db.MarkReverseDone(database); err != nil {
 				return msgSessionProgressMarked{phase: "reverse", err: err.Error()}
@@ -472,13 +476,14 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			return msgSessionProgressMarked{phase: "reverse"}
 		}
 		m2, initCmd := m.startPhase(sessionPhaseBrainDump2)
-		return m2, tea.Batch(markCmd, m.savePhaseMetricCmd("reverse_review", len(m.cards), len(m.reverseCorrectIDs), false), initCmd)
+		return m2, tea.Batch(markCmd, initCmd)
 
 	case sessionPhaseBrainDump2:
 		// BrainDump2 result does NOT feed into FSRS — advance to Blank.
 		debuglog.Infof("daily_session phase completed: braindump2 recalled=%d/%d", m.brainDump2.matchCount, m.brainDump2.totalCount)
+		m.persistPhaseMetric("braindump2", m.brainDump2.totalCount, m.brainDump2.matchCount, false)
 		m2, initCmd := m.startPhase(sessionPhaseBlank)
-		return m2, tea.Batch(m.savePhaseMetricCmd("braindump2", m.brainDump2.totalCount, m.brainDump2.matchCount, false), initCmd)
+		return m2, initCmd
 
 	case sessionPhaseBlank:
 		m.blankDone = true
@@ -486,6 +491,7 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			m.blankSkipped = true
 		}
 		debuglog.Infof("daily_session phase completed: blank correct=%d/%d skipped=%t", len(m.blank.correctIDs), len(m.blank.cards), m.blankSkipped)
+		m.persistPhaseMetric("blank", len(m.blank.cards), len(m.blank.correctIDs), m.blankSkipped)
 		// MarkBlankDone is called here so daily progress is saved before BrainDump3.
 		markCmd := func() tea.Msg {
 			if err := db.MarkBlankDone(database); err != nil {
@@ -494,7 +500,7 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			return msgSessionProgressMarked{phase: "blank"}
 		}
 		m2, initCmd := m.startPhase(sessionPhaseBrainDump3)
-		return m2, tea.Batch(markCmd, m.savePhaseMetricCmd("blank", len(m.blank.cards), len(m.blank.correctIDs), m.blankSkipped), initCmd)
+		return m2, tea.Batch(markCmd, initCmd)
 
 	case sessionPhaseBrainDump3:
 		// BrainDump3 result does NOT feed into FSRS. FSRS scoring uses only
@@ -534,6 +540,7 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 		}
 
 		debuglog.Infof("daily_session phase completed: braindump3 recalled=%d/%d; saving_results cards=%d retry_cards=%d", m.brainDump3.matchCount, m.brainDump3.totalCount, len(results), len(retryCards))
+		m.persistPhaseMetric("braindump3", m.brainDump3.totalCount, m.brainDump3.matchCount, false)
 
 		sid := m.reviewSessionID
 		finalPassCount := 0
@@ -549,7 +556,7 @@ func (m SessionModel) advancePhase() (SessionModel, tea.Cmd) {
 			return msgSessionScored{}
 		}
 		m.phase = sessionPhaseScoring
-		return m, tea.Batch(m.savePhaseMetricCmd("braindump3", m.brainDump3.totalCount, m.brainDump3.matchCount, false), saveCmd)
+		return m, saveCmd
 
 	case sessionPhaseRetryReverse:
 		m.retryReviewDone = true
@@ -568,28 +575,22 @@ func containsID(ids []int64, target int64) bool {
 	return false
 }
 
-func (m SessionModel) savePhaseMetricCmd(phase string, itemCount, correctCount int, skipped bool) tea.Cmd {
+func (m SessionModel) persistPhaseMetric(phase string, itemCount, correctCount int, skipped bool) {
 	if m.reviewSessionID == 0 {
-		return nil
+		return
 	}
-	database := m.db
-	sessionID := m.reviewSessionID
 	durationSeconds := 0
 	if !m.phaseStartedAt.IsZero() {
 		durationSeconds = int(math.Round(time.Since(m.phaseStartedAt).Seconds()))
 	}
-	return func() tea.Msg {
-		err := db.SaveDailySessionPhaseMetric(database, sessionID, db.DailySessionPhaseMetric{
-			Phase:           phase,
-			ItemCount:       itemCount,
-			CorrectCount:    correctCount,
-			DurationSeconds: durationSeconds,
-			Skipped:         skipped,
-		})
-		if err != nil {
-			debuglog.Errorf("daily_session phase metric save failed: session_id=%d phase=%s err=%v", sessionID, phase, err)
-		}
-		return nil
+	if err := db.SaveDailySessionPhaseMetric(m.db, m.reviewSessionID, db.DailySessionPhaseMetric{
+		Phase:           phase,
+		ItemCount:       itemCount,
+		CorrectCount:    correctCount,
+		DurationSeconds: durationSeconds,
+		Skipped:         skipped,
+	}); err != nil {
+		debuglog.Errorf("daily_session phase metric save failed: session_id=%d phase=%s err=%v", m.reviewSessionID, phase, err)
 	}
 }
 

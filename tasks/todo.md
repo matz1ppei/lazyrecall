@@ -81,6 +81,8 @@
 - [x] Retarget fatigue-analysis notifications to completed Daily Session totals
 - [x] Add regression tests for fatigue-analysis persistence and counting
 - [x] Run the relevant test suite and review results
+- [x] Remove SQLite write contention between phase metrics and Daily Session scoring
+- [x] Add a small SQLite busy timeout as a safety net for short write contention
 
 ## Review
 
@@ -115,4 +117,5 @@
 - Session mix: Daily Session now fills overdue and learning due cards first, then review due cards, and only then adds up to 2 new cards.
 - Suspicious card review: Tools now opens a dedicated suspicious-card list that flags low-noise example/front mismatches and lets them be fixed inline with the existing edit UI.
 - Fatigue analysis foundation: Daily Session analysis now keys off completed Daily Sessions, stores selected-card mix plus per-phase metrics, and no longer treats all started sessions as equally valid fatigue samples.
+- SQLite contention fix: phase metrics are now persisted synchronously before the next phase starts, so they no longer race the main Daily Session save path.
 - Verification: `go test ./...`
